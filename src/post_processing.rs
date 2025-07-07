@@ -10,7 +10,7 @@ pub fn insert_post_processing_effect(
         name.to_string(),
         &renderer.context.device,
         &[&renderer.context.texture_layout],
-        &renderer.context.config.borrow(),
+        &renderer.context.config.read(),
         renderer.render_texture_format,
         shader_id,
         &renderer.shaders.borrow_mut(),

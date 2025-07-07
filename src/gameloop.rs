@@ -1,8 +1,8 @@
 use crate::*;
 
 pub trait GameLoop {
-    fn start(&mut self);
-    fn update(&mut self);
+    async fn start(&mut self);
+    async fn update(&mut self);
 }
 
 #[derive(Default)]
@@ -11,7 +11,7 @@ pub struct MyGame {
 }
 
 impl GameLoop for MyGame {
-    fn start(&mut self) {
+    async fn start(&mut self) {
         clear_background(BLACK);
 
         // renderer.set_camera(Camera3D::new(BaseCamera::new(vec3(0.0, 0.0, -90.), 0.01, 10000.0), 60.0));
@@ -22,7 +22,7 @@ impl GameLoop for MyGame {
         
     }
 
-    fn update(&mut self) {
+    async fn update(&mut self) {
         draw_rect_rot(vec2(self.r, 0.), vec2(1920., 3.), 90f32.to_radians(), WHITE, 0);
 
 

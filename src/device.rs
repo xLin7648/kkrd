@@ -137,7 +137,7 @@ pub async fn create_graphics_context(
         adapter: Arc::new(adapter),
         surface: Some(Arc::new(surface)),
         instance: Arc::new(instance),
-        config: Arc::new(AtomicRefCell::new(config)),
+        config: Arc::new(RwLock::new(config)),
         textures
     }
 }

@@ -75,9 +75,9 @@ pub fn load_texture_with_image(
         &context.texture_layout,
     );
 
-    ASSETS.borrow_mut().insert_handle(name, handle);
+    ASSETS.write().insert_handle(name, handle);
     ASSETS
-        .borrow_mut()
+        .write()
         .texture_image_map
         .lock()
         .insert(handle, Arc::new(img.to_rgba8()));

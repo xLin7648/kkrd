@@ -1,10 +1,10 @@
 use crate::*;
 
-pub static ASSETS: Lazy<AtomicRefCell<Assets>> =
-    Lazy::new(|| AtomicRefCell::new(Assets::new()));
+pub static ASSETS: Lazy<RwLock<Assets>> =
+    Lazy::new(|| RwLock::new(Assets::new()));
 
 pub fn texture_id_safe(id: &str) -> Option<TextureHandle> {
-    ASSETS.borrow().textures.get(id).copied()
+    ASSETS.read().textures.get(id).copied()
 }
 
 pub struct Assets {
@@ -25,7 +25,7 @@ impl Assets {
     }
 
     pub fn image_size(handle: TextureHandle) -> ImageSizeResult {
-        let assets = ASSETS.borrow();
+        let assets = ASSETS.read();
         let image_map = assets.texture_image_map.lock();
     
     
@@ -47,7 +47,7 @@ pub fn texture_id(id: &str) -> TextureHandle {
     } else {
         texture_id_safe(id).unwrap_or_else(|| {
             if id == "error" {
-                for key in ASSETS.borrow().textures.keys().sorted() {
+                for key in ASSETS.read().textures.keys().sorted() {
                     println!("{key}");
                 }
 

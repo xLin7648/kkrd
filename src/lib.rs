@@ -1,83 +1,104 @@
 // 内部模块的导入
-mod rect;
-mod quad;
-mod utils;
-mod color;
-mod y_sort;
 mod assets;
+mod batching;
 mod camera;
+mod color;
 mod config;
 mod device;
-mod shaders;
-mod texture;
-mod batching;
+mod ex;
+mod gameloop;
 mod gg;
 mod pipelines;
+mod post_processing;
+mod quad;
+mod rect;
 mod render_pass;
 mod render_queues;
-mod post_processing;
+mod shaders;
+mod texture;
 mod time;
-mod gameloop;
-mod ex;
+mod utils;
+mod y_sort;
 
 use pollster::FutureExt;
 // 其他可能导入的模块
-use rect::*;
-use quad::*;
-use utils::*;
+use assets::*;
+use batching::*;
+use camera::*;
 use color::*;
 use colors::*;
-use y_sort::*;
-use assets::*;
-use camera::*;
 use config::*;
 use device::*;
-use shaders::*;
-use texture::*;
-use batching::*;
+use ex::*;
+use gameloop::*;
 use gg::*;
 use pipelines::*;
+use post_processing::*;
+use quad::*;
+use rect::*;
 use render_pass::*;
 use render_queues::*;
-use post_processing::*;
+use shaders::*;
+use texture::*;
 use time::*;
-use gameloop::*;
-use ex::*;
+use utils::*;
+use y_sort::*;
 
 // 外部依赖库的导入
 use anyhow::*;
-use atomic_refcell::*;
 use glam::*;
+use itertools::*;
 use log::*;
+use once_cell::sync::*;
 use ordered_float::*;
+use parking_lot::*;
 use pollster::*;
 use smallvec::*;
-use itertools::*;
-use parking_lot::*;
-use once_cell::sync::*;
 
 // std 相关的导入
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     hash::{DefaultHasher, Hasher},
-    sync::{atomic::*, Arc},
+    sync::{Arc, atomic::*},
+    time::{Duration, Instant},
 };
 
 // WGPU 相关的导入
-use wgpu::{util::{self, DeviceExt}, Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferUsages, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits, PipelineCompilationOptions, PowerPreference, PresentMode, Queue, ShaderStages, Surface, SurfaceConfiguration};
+use wgpu::{
+    Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType,
+    BufferUsages, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits,
+    PipelineCompilationOptions, PowerPreference, PresentMode, Queue, ShaderStages, Surface,
+    SurfaceConfiguration,
+    util::{self, DeviceExt},
+};
 
 // Winit 相关的导入
 use winit::{
-    application::ApplicationHandler, dpi::*, event::*, event_loop::{EventLoop, *}, window::*
+    application::ApplicationHandler,
+    dpi::*,
+    event::*,
+    event_loop::{EventLoop, *},
+    window::*,
+};
+
+use tokio::{
+    runtime::Runtime,
+    sync::{
+        Barrier,
+        mpsc::{self, UnboundedSender},
+        oneshot,
+    },
+    task,
 };
 
 // 线程间通信消息
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 enum RenderMessage {
-    RenderFrame, // 请求渲染帧
-    Exit,        // 退出信号
+    RenderFrame(oneshot::Sender<()>), // 请求渲染帧
+    Exit,                             // 退出信号
 }
 
 #[cfg(target_os = "android")]
@@ -91,6 +112,15 @@ fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
 
 // 主函数
 fn main() {
+    // 创建高精度Tokio运行时
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_time()
+        .build()
+        .expect("Failed to create Tokio runtime");
+
+    // 创建通信通道
+    let (tx, mut rx) = mpsc::unbounded_channel::<RenderMessage>();
+
     let mut event_loop_builder = EventLoop::<RenderMessage>::with_user_event();
 
     #[cfg(target_os = "windows")]
@@ -120,7 +150,9 @@ fn main() {
         .build()
         .expect("Failed to build event loop");
 
-    let _event_loop_proxy = event_loop.create_proxy();
+    event_loop.set_control_flow(ControlFlow::Poll);
+
+    let event_loop_proxy = event_loop.create_proxy();
 
     init_window_config(
         "Full Game Loop Example".to_string(),
@@ -130,43 +162,93 @@ fn main() {
 
     let mut game = MyGame::default();
 
-    std::thread::spawn(move || {
-        loop {
-            if window_config().init_end {
-                // 执行游戏逻辑（物理、AI、状态更新等）
-                game.start();
-                break;
-            }
+    // 启动游戏循环任务
+    rt.spawn(async move {
+        println!("Game loop started");
+        // 等待窗口初始化完成
+        while !window_config().init_end {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
+        // 执行游戏初始化
+        game.start().await;
+
+        // 主游戏循环
         loop {
             // 执行游戏逻辑（物理、AI、状态更新等）
-            game.update();
+            game.update().await;
 
-            // 通知渲染线程渲染当前帧
-            let _ = _event_loop_proxy.send_event(RenderMessage::RenderFrame);
+            // 创建帧完成通知通道
+            let (frame_done_tx, frame_done_rx) = oneshot::channel::<()>();
+
+            // 发送渲染请求并附带完成通知
+            if let Err(e) = event_loop_proxy.send_event(RenderMessage::RenderFrame(frame_done_tx)) {
+                error!("Failed to send render request: {}", e);
+                break;
+            }
+
+            // 等待渲染完成通知
+            if frame_done_rx.await.is_err() {
+                warn!("Frame completion notification failed");
+            }
 
             get_timer().lock().update();
 
-            // 控制帧率（示例：60FPS）
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            if window_config().vsync_mode == PresentMode::Immediate {
+                framerate_limiter(100.);
+            }
+
+            // print_time_data();
         }
     });
 
+    // 启动事件循环
     let _ = event_loop.run_app(&mut App::default());
+
+    // 关闭 Tokio 运行时
+    rt.shutdown_background();
+}
+
+#[allow(unused_variables)]
+fn framerate_limiter(fps: f64) {
+    let binding: Arc<lock_api::Mutex<RawMutex, Time>> = get_timer();
+    let mut timer = binding.lock();
+
+    let limit = Duration::from_secs_f64(1.0 / fps);
+    let frame_time = timer.sleep_end.elapsed();
+    let oversleep = timer
+        .sleep_timer
+        .oversleep
+        .try_lock()
+        .as_deref()
+        .cloned()
+        .unwrap_or_default();
+    let sleep_time = limit.saturating_sub(frame_time + oversleep);
+    spin_sleep::sleep(sleep_time);
+
+    let frame_time_total = timer.sleep_end.elapsed();
+    timer.sleep_end = Instant::now();
+
+    let sd = timer.sleep_timer.frametime.try_lock();
+    if let Some(mut frametime) = timer.sleep_timer.frametime.try_lock() {
+        *frametime = frame_time;
+    }
+    if let Some(mut oversleep) = timer.sleep_timer.oversleep.try_lock() {
+        *oversleep = frame_time_total.saturating_sub(limit);
+    }
 }
 
 pub fn _init_default_config(mut config: WindowConfig) -> WindowConfig {
     config.resolution = ResolutionConfig::Physical(1280, 720);
     config.power_preference = PowerPreference::HighPerformance;
-    config.vsync_mode = PresentMode::Immediate;
+    config.vsync_mode = PresentMode::Fifo;
     config.sample_count = Msaa::Sample4;
     config
 }
 
 #[derive(Default)]
-struct App
-{
+struct App {
+    interaction_timer: Option<Instant>,
     pub window: Option<Arc<Window>>,
     pub wr: Option<WgpuRenderer>,
 }
@@ -174,35 +256,40 @@ struct App
 impl App {
     pub fn init_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_config = window_config();
-    
+
         let resolution = Some(match window_config.resolution {
             ResolutionConfig::Physical(w, h) => Size::Physical(PhysicalSize::new(w, h)),
             ResolutionConfig::Logical(w, h) => Size::Logical(LogicalSize::new(w as f64, h as f64)),
         });
-        let min_resolution = Some( match window_config.min_resolution {
+        let min_resolution = Some(match window_config.min_resolution {
             ResolutionConfig::Physical(w, h) => Size::Physical(PhysicalSize::new(w, h)),
             ResolutionConfig::Logical(w, h) => Size::Logical(LogicalSize::new(w as f64, h as f64)),
         });
-    
+
         let fullscreen = if window_config.fullscreen {
             Some(Fullscreen::Borderless(None))
         } else {
             None
         };
-    
+
         let mut window_attributes = WindowAttributes::default();
-    
-        window_attributes.title          = window_config.title_name.clone();
-        window_attributes.inner_size     = resolution;
+
+        window_attributes.title = window_config.title_name.clone();
+        window_attributes.inner_size = resolution;
         window_attributes.min_inner_size = min_resolution;
-        window_attributes.fullscreen     = fullscreen;
-    
-        self.window = Some(Arc::new(event_loop.create_window(window_attributes).unwrap()));
+        window_attributes.fullscreen = fullscreen;
+
+        self.window = Some(Arc::new(
+            event_loop.create_window(window_attributes).unwrap(),
+        ));
     }
 
     pub fn set_window(&mut self, window_config: WindowConfig) {
-        let window = self.window.as_mut().expect("The window has not been initialized");
-    
+        let window = self
+            .window
+            .as_mut()
+            .expect("The window has not been initialized");
+
         let resolution = match window_config.resolution {
             ResolutionConfig::Physical(w, h) => Size::Physical(PhysicalSize::new(w, h)),
             ResolutionConfig::Logical(w, h) => Size::Logical(LogicalSize::new(w as f64, h as f64)),
@@ -212,37 +299,52 @@ impl App {
             ResolutionConfig::Logical(w, h) => Size::Logical(LogicalSize::new(w as f64, h as f64)),
         });
         let _ = window.request_inner_size(resolution);
-        
+
         window.set_title(&window_config.title_name);
         window.set_min_inner_size(min_resolution);
-    
+
         if window_config.fullscreen {
             window.set_fullscreen(Some(Fullscreen::Borderless(None)));
         }
-    
+
         set_window_config(window_config);
     }
 
     pub fn renderer_update(&mut self) {
-        if let Some(w) = &mut self.wr {
-            w.update();
-            w.draw();
-            w.end_frame();
+        // 交互结束500ms后恢复垂直同步
+        if let Some(wr) = &mut self.wr {
+            wr.update();
+            wr.draw();
+            wr.end_frame();
 
             clear_shader_uniform_table();
+
+            if let Some(timer) = self.interaction_timer {
+                if timer.elapsed() > Duration::from_millis(500) {
+                    wr.set_present_mode(PresentMode::Fifo);
+                    window_config_mut().vsync_mode = PresentMode::Fifo;
+                    self.interaction_timer = None;
+                }
+            }
         }
     }
 }
 
-impl ApplicationHandler<RenderMessage> for App
-{
+impl ApplicationHandler<RenderMessage> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: RenderMessage) {
         match event {
-            RenderMessage::RenderFrame => self.renderer_update(),
+            RenderMessage::RenderFrame(completion_tx) => {
+                self.renderer_update();
+
+                // 通知游戏循环渲染完成
+                if let Err(_) = completion_tx.send(()) {
+                    warn!("Failed to send frame completion");
+                }
+            }
             RenderMessage::Exit => event_loop.exit(),
         }
     }
-    
+
     // 当应用程序从挂起状态恢复时调用此方法
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if let Some(window) = &self.window {
@@ -255,9 +357,7 @@ impl ApplicationHandler<RenderMessage> for App
             // 从桌面回来不会执行
             self.init_window(event_loop);
 
-            self.wr = Some(WgpuRenderer::new(
-                self.window.clone().unwrap()
-            ).block_on());
+            self.wr = Some(WgpuRenderer::new(self.window.clone().unwrap()).block_on());
 
             window_config_mut().init_end = true;
         }
@@ -273,12 +373,23 @@ impl ApplicationHandler<RenderMessage> for App
         match event {
             WindowEvent::Resized(new_size) => {
                 if let Some(wr) = &mut self.wr {
-                    wr.resize(new_size);
+                    // 交互时切换为Immediate模式
+                    wr.resize(new_size, PresentMode::Immediate);
+                    window_config_mut().vsync_mode = PresentMode::Immediate;
+                    self.interaction_timer = Some(Instant::now());
                 }
-            },
+            }
+            WindowEvent::Moved(_) => {
+                if let Some(wr) = &mut self.wr {
+                    // 交互时切换为Immediate模式
+                    wr.set_present_mode(PresentMode::Immediate);
+                    window_config_mut().vsync_mode = PresentMode::Immediate;
+                    self.interaction_timer = Some(Instant::now());
+                }
+            }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
-            },
+            }
             _ => (),
         }
     }
@@ -290,7 +401,7 @@ impl ApplicationHandler<RenderMessage> for App
         if let Some(wr) = self.wr.as_mut() {
             wr.context.surface = None;
         }
-        
+
         info!("Suspended");
     }
 

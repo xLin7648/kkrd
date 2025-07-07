@@ -91,9 +91,6 @@ impl Default for WindowConfig {
     }
 }
 
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use once_cell::sync::OnceCell;
-
 static WINDOW_CONFIG: OnceCell<RwLock<WindowConfig>> = OnceCell::new();
 
 pub fn init_window_config(
@@ -115,7 +112,6 @@ pub fn window_config() -> RwLockReadGuard<'static, WindowConfig> {
         .get()
         .expect("window_config() must be called after comfy main runs")
         .read()
-        .expect("Failed to acquire read lock")
 }
 
 pub fn window_config_mut() -> RwLockWriteGuard<'static, WindowConfig> {
@@ -123,7 +119,6 @@ pub fn window_config_mut() -> RwLockWriteGuard<'static, WindowConfig> {
         .get()
         .expect("game_config() must be called after comfy main runs")
         .write()
-        .expect("Failed to acquire write lock")
 }
 
 pub(crate) fn set_window_config(window_config: WindowConfig) {
