@@ -240,7 +240,7 @@ pub fn _init_default_config(mut config: WindowConfig) -> WindowConfig {
     config.resolution = ResolutionConfig::Physical(1280, 720);
     config.power_preference = PowerPreference::HighPerformance;
     config.vsync_mode = PresentMode::Immediate;
-    config.sample_count = Msaa::Sample4;
+    config.sample_count = Msaa::Sample8;
     config
 }
 

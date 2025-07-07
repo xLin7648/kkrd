@@ -1,3 +1,5 @@
+use wgpu::TextureView;
+
 use crate::*;
 
 pub fn run_batched_render_passes(
@@ -5,6 +7,7 @@ pub fn run_batched_render_passes(
     clear_color: Color,
     sprite_shader_id: ShaderId,
     error_shader_id: ShaderId,
+    default_surface_view: &TextureView
 ) {
     let mut is_first = true;
 
@@ -53,6 +56,7 @@ pub fn run_batched_render_passes(
             },
             sprite_shader_id,
             error_shader_id,
+            default_surface_view
         );
 
 
@@ -73,6 +77,7 @@ pub fn run_batched_render_passes(
             },
             sprite_shader_id,
             error_shader_id,
+            default_surface_view
         );
 
         // MeshGroupKey {
@@ -100,6 +105,7 @@ pub fn render_meshes(
     pass_data: MeshDrawData,
     sprite_shader_id: ShaderId,
     _error_shader_id: ShaderId,
+    default_surface_view: &TextureView
 ) {
     let pipeline_name = ensure_pipeline_exists(c, &pass_data, sprite_shader_id);
 
@@ -145,12 +151,11 @@ pub fn render_meshes(
             c.msaa_texture.as_mut().unwrap()
         }; */
 
-        /* let surface= if window_config().sample_count == Msaa::Off { 
-            &c.hdr_texture 
+        let surface= if window_config().sample_count == Msaa::Off { 
+            &default_surface_view
         } else { 
             &c.msaa_texture
-        }; */
-        let surface= &c.msaa_texture;
+        };
 
         let mut render_pass =
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

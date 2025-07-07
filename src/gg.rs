@@ -387,6 +387,7 @@ impl WgpuRenderer {
             clear_color,
             self.sprite_shader_id,
             self.error_shader_id,
+            &surface_view
         );
 
         let mut encoder =
