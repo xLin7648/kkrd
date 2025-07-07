@@ -18,11 +18,10 @@ impl GameLoop for MyGame {
         // renderer.set_default_camera();
 
         self.r = 187.841705;
-
-        
     }
 
     async fn update(&mut self) {
+        clear_background(BLUE);
         draw_rect_rot(vec2(self.r, 0.), vec2(1920., 3.), 90f32.to_radians(), WHITE, 0);
 
 

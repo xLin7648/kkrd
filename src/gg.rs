@@ -308,7 +308,7 @@ impl WgpuRenderer {
         renderer
     }
 
-    pub(crate) fn resize(&mut self, mut new_size: PhysicalSize<u32>, present_mode: PresentMode) {
+    pub(crate) fn resize(&mut self, mut new_size: PhysicalSize<u32>){ //, present_mode: PresentMode) {
         if new_size.width > 0 && new_size.height > 0 {
             new_size.width = new_size.width.max(1);
             new_size.height = new_size.height.max(1);
@@ -323,7 +323,7 @@ impl WgpuRenderer {
 
                 config.width = new_size.width;
                 config.height = new_size.height;
-                config.present_mode = present_mode;
+                // config.present_mode = present_mode;
 
                 surface.configure(&self.context.device, &config);
             }

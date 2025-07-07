@@ -194,19 +194,17 @@ fn main() {
 
             get_timer().lock().update();
 
-            if window_config().vsync_mode == PresentMode::Immediate {
-                framerate_limiter(100.);
-            }
+            framerate_limiter(100.);
 
             // print_time_data();
         }
     });
 
     // 启动事件循环
-    let _ = event_loop.run_app(&mut App::default());
-
-    // 关闭 Tokio 运行时
-    rt.shutdown_background();
+    let _ = event_loop.run_app(&mut App {
+        runtime: Some(Box::new(rt)),
+        ..Default::default()
+    });
 }
 
 #[allow(unused_variables)]
@@ -241,14 +239,14 @@ fn framerate_limiter(fps: f64) {
 pub fn _init_default_config(mut config: WindowConfig) -> WindowConfig {
     config.resolution = ResolutionConfig::Physical(1280, 720);
     config.power_preference = PowerPreference::HighPerformance;
-    config.vsync_mode = PresentMode::Fifo;
+    config.vsync_mode = PresentMode::Immediate;
     config.sample_count = Msaa::Sample4;
     config
 }
 
 #[derive(Default)]
 struct App {
-    interaction_timer: Option<Instant>,
+    pub runtime: Option<Box<Runtime>>,
     pub window: Option<Arc<Window>>,
     pub wr: Option<WgpuRenderer>,
 }
@@ -318,14 +316,6 @@ impl App {
             wr.end_frame();
 
             clear_shader_uniform_table();
-
-            if let Some(timer) = self.interaction_timer {
-                if timer.elapsed() > Duration::from_millis(500) {
-                    wr.set_present_mode(PresentMode::Fifo);
-                    window_config_mut().vsync_mode = PresentMode::Fifo;
-                    self.interaction_timer = None;
-                }
-            }
         }
     }
 }
@@ -373,18 +363,7 @@ impl ApplicationHandler<RenderMessage> for App {
         match event {
             WindowEvent::Resized(new_size) => {
                 if let Some(wr) = &mut self.wr {
-                    // 交互时切换为Immediate模式
-                    wr.resize(new_size, PresentMode::Immediate);
-                    window_config_mut().vsync_mode = PresentMode::Immediate;
-                    self.interaction_timer = Some(Instant::now());
-                }
-            }
-            WindowEvent::Moved(_) => {
-                if let Some(wr) = &mut self.wr {
-                    // 交互时切换为Immediate模式
-                    wr.set_present_mode(PresentMode::Immediate);
-                    window_config_mut().vsync_mode = PresentMode::Immediate;
-                    self.interaction_timer = Some(Instant::now());
+                    wr.resize(new_size);
                 }
             }
             WindowEvent::CloseRequested => {
@@ -407,6 +386,10 @@ impl ApplicationHandler<RenderMessage> for App {
 
     // 在应用程序准备退出时调用
     fn exiting(&mut self, _: &ActiveEventLoop) {
+        // 关闭 Tokio 运行时
+        if let Some(runtime) = self.runtime.take() {  // 用 take() 获取所有权
+            runtime.shutdown_background();
+        }
         info!("Exiting");
     }
 
