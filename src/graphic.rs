@@ -117,7 +117,7 @@ pub struct WgpuRenderer {
 
     pub msaa_texture: wgpu::TextureView,
 
-    main_camera: Option<Arc<Mutex<dyn camera::Camera>>>,
+    // main_camera: Option<Arc<Mutex<dyn camera::Camera>>>,
 }
 
 impl WgpuRenderer {
@@ -139,10 +139,10 @@ impl WgpuRenderer {
             );
         }
 
-        let mut main_camera =
-            Camera2D::new(BaseCamera::new(vec3(0.0, 0.0, -1.), 0.01, 10000.0), 540.0);
+        // let mut main_camera =
+        //     Camera2D::new(BaseCamera::new(vec3(0.0, 0.0, -1.), 0.01, 10000.0), 540.0);
 
-        main_camera.resize(size);
+        // main_camera.resize(size);
 
         // let main_camera = None;
 
@@ -253,13 +253,11 @@ impl WgpuRenderer {
         let msaa_texture = create_multisampled_framebuffer(
             &context.device,
             &context.config.read(),
-            window_config().sample_count.clone().into(),
+            game_config().sample_count.clone().into(),
         );
 
         let renderer = Self {
             size,
-
-            main_camera: Some(Arc::new(Mutex::new(main_camera))),
 
             camera_buffer,
             camera_uniform,
@@ -314,7 +312,7 @@ impl WgpuRenderer {
             new_size.height = new_size.height.max(1);
             self.size = new_size;
 
-            if let Some(main_camera) = &self.main_camera {
+            if let Some(main_camera) = &game_config().main_camera {
                 main_camera.lock().resize(new_size);
             }
 
@@ -344,7 +342,7 @@ impl WgpuRenderer {
         self.msaa_texture = create_multisampled_framebuffer(
             &self.context.device,
             &self.context.config.read(),
-            window_config().sample_count.clone().into(),
+            game_config().sample_count.clone().into(),
         );
     }
 
@@ -364,7 +362,7 @@ impl WgpuRenderer {
     }
 
     pub(crate) fn draw(&mut self) {
-        let clear_color = window_config().clear_color;
+        let clear_color = game_config().clear_color;
 
         // 检查 surface 是否可用
         let output = {
@@ -398,7 +396,7 @@ impl WgpuRenderer {
                 });
 
         // 解析MSAA纹理到非MSAA的高精度纹理
-        if window_config().sample_count != Msaa::Off {
+        if game_config().sample_count != Msaa::Off {
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("MSAA Resolve Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -438,16 +436,10 @@ impl WgpuRenderer {
         self.context.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    pub(crate) fn set_camera(&mut self, camera: impl Camera + Send + Sync + 'static) {
-        self.main_camera = Some(Arc::new(Mutex::new(camera)));
-    }
-
-    pub(crate) fn set_default_camera(&mut self) {
-        self.main_camera = None;
-    }
+    
 
     fn projection_matrix(&self) -> Mat4 {
-        if let Some(camera) = &self.main_camera {
+        if let Some(camera) = &game_config().main_camera {
             camera.lock().matrix()
         } else {
             self.pixel_perfect_projection_matrix()

@@ -2,7 +2,7 @@ use image::DynamicImage;
 use image::GenericImageView;
 use image::ImageResult;
 
-use crate::ex::DeviceExtensions;
+use crate::utils::DeviceExtensions;
 
 #[derive(Debug)]
 pub struct TextureCreationParams<'a> {
@@ -80,7 +80,7 @@ impl Texture {
             label: Some(label),
             size,
             mip_level_count: 1,
-            sample_count: crate::config::window_config().sample_count.clone().into(),
+            sample_count: crate::config::game_config().sample_count.clone().into(),
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT |

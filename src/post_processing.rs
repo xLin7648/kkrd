@@ -176,7 +176,7 @@ pub fn create_post_processing_pipeline(
         },
         depth_stencil: None,
         multisample: wgpu::MultisampleState {
-            count: window_config().sample_count.clone().into(),
+            count: game_config().sample_count.clone().into(),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

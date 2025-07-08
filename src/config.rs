@@ -54,52 +54,56 @@ impl From<Msaa> for u32 {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct WindowConfig {
+#[derive(Debug)]
+pub struct GameConfig {
     pub title_name: String,
     pub version: &'static str,
     pub fullscreen: bool,
+    pub target_frame_rate: Option<u32>,
     pub init_end: bool,
 
-    pub resolution: ResolutionConfig,
-    pub min_resolution: ResolutionConfig,
+    pub resolution: Option<Size>,
+    pub min_resolution: Option<Size>,
     
     pub sample_count: Msaa,
-    pub vsync_mode: wgpu::PresentMode,
     pub power_preference: wgpu::PowerPreference,
 
-    pub clear_color: Color
+    pub clear_color: Color,
+
+    pub main_camera: Option<Arc<Mutex<dyn camera::Camera>>>
 }
 
-impl Default for WindowConfig {
+impl Default for GameConfig {
     fn default() -> Self {
         Self { 
             title_name: "New Game".to_owned(),
             version: "New Version",
             fullscreen: false,
             init_end: false,
+            target_frame_rate: Some(60),
 
-            resolution: ResolutionConfig::Physical(1280, 720), 
-            min_resolution: ResolutionConfig::Physical(100, 100), 
+            resolution: Some(Size::Physical(PhysicalSize::new(1280, 720))), 
+            min_resolution: Some(Size::Physical(PhysicalSize::new(1280, 720))), 
 
             sample_count: Msaa::default(),
-            vsync_mode: wgpu::PresentMode::default(),
             power_preference: wgpu::PowerPreference::default(),
 
-            clear_color: BLUE
+            clear_color: BLUE,
+
+            main_camera: None
         }
     }
 }
 
-static WINDOW_CONFIG: OnceCell<RwLock<WindowConfig>> = OnceCell::new();
+static GAME_CONFIG: OnceCell<RwLock<GameConfig>> = OnceCell::new();
 
-pub fn init_window_config(
+pub(crate) fn init_game_config(
     title_name: String,
     version: &'static str,
-    config_fn: fn(WindowConfig) -> WindowConfig,
+    config_fn: fn(GameConfig) -> GameConfig,
 ) {
-    WINDOW_CONFIG
-        .set(RwLock::new(config_fn(WindowConfig {
+    GAME_CONFIG
+        .set(RwLock::new(config_fn(GameConfig {
             title_name,
             version,
             ..Default::default()
@@ -107,26 +111,38 @@ pub fn init_window_config(
         .expect("init_window_config() should only be called once");
 }
 
-pub fn window_config() -> RwLockReadGuard<'static, WindowConfig> {
-    WINDOW_CONFIG
+pub(crate) fn game_config() -> RwLockReadGuard<'static, GameConfig> {
+    GAME_CONFIG
         .get()
         .expect("window_config() must be called after comfy main runs")
         .read()
 }
 
-pub fn window_config_mut() -> RwLockWriteGuard<'static, WindowConfig> {
-    WINDOW_CONFIG
+pub(crate) fn game_config_mut() -> RwLockWriteGuard<'static, GameConfig> {
+    GAME_CONFIG
         .get()
         .expect("game_config() must be called after comfy main runs")
         .write()
 }
 
-pub(crate) fn set_window_config(window_config: WindowConfig) {
-    let mut config = window_config_mut();
-    *config = window_config;
+pub fn clear_background(color: Color) {
+    let mut config = game_config_mut();
+    config.clear_color = color;
 }
 
-pub fn clear_background(color: Color) {
-    let mut config = window_config_mut();
-    config.clear_color = color;
+pub fn set_camera(mut camera: impl Camera + Send + Sync + 'static) {
+    let mut config = game_config_mut();
+
+    camera.resize(get_window_size());
+    config.main_camera = Some(Arc::new(Mutex::new(camera)));
+}
+
+pub fn set_default_camera() {
+    let mut config = game_config_mut();
+    config.main_camera = None;
+}
+
+pub fn set_target_frame_rate(target_frame_rate: u32) {
+    let mut config = game_config_mut();
+    config.target_frame_rate = Some(target_frame_rate);
 }

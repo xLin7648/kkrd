@@ -4,7 +4,7 @@ pub async fn create_graphics_context(
     window: Arc<Window>
 ) -> GraphicsContext {
     let size = window.inner_size();
-    let window_config = window_config().clone();
+    let window_config = game_config();
 
     let instance = Instance::new(&InstanceDescriptor {
         backends: Backends::VULKAN,
@@ -72,22 +72,12 @@ pub async fn create_graphics_context(
     let surface_usage =
         wgpu::TextureUsages::RENDER_ATTACHMENT;
 
-    let desired_present_mode = window_config.vsync_mode;
-
-    let present_mode = if caps.present_modes.contains(&desired_present_mode) {
-        desired_present_mode
-    } else {
-        caps.present_modes[0]
-    };
-
-    info!("ACTUAL PRESENT MODE: {:?}", present_mode);
-
     let config = wgpu::SurfaceConfiguration {
         usage: surface_usage,
         format: monitor_surface_format,
         width: size.width.max(1),
         height: size.height.max(1),
-        present_mode,
+        present_mode: PresentMode::Immediate,
         alpha_mode: caps.alpha_modes[0],
         desired_maximum_frame_latency: 2,
         view_formats: vec![],

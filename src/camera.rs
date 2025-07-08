@@ -1,6 +1,8 @@
 use crate::*;
 
-pub trait Camera: Send + Sync {
+use std::fmt::Debug;
+
+pub trait Camera: Send + Sync + Debug {
     fn matrix(&self) -> Mat4;
     fn resize(&mut self, new_size: PhysicalSize<u32>);
     fn set_position(&mut self, position: Vec3);
@@ -10,6 +12,7 @@ pub trait Camera: Send + Sync {
     fn screen_to_world(&self, screen_position: Vec2) -> Vec3;
 }
 
+#[derive(Debug)]
 pub struct BaseCamera {
     pos: Vec3,
     rot: Quat, // 修改为保存旋转的四元数
@@ -76,6 +79,7 @@ impl Default for BaseCamera {
     }
 }
 
+#[derive(Debug)]
 pub struct Camera3D {
     base: BaseCamera,
     fovy: f32,
@@ -148,6 +152,7 @@ impl Camera for Camera3D {
     }
 }
 
+#[derive(Debug)]
 pub struct Camera2D {
     base: BaseCamera,
     rect: Rect,

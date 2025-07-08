@@ -1,5 +1,7 @@
 use crate::*;
 
+use anyhow::*;
+
 #[derive(Debug)]
 pub struct ShaderMap {
     pub shaders: HashMap<ShaderId, Shader>,
