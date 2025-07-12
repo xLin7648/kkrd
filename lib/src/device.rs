@@ -1,8 +1,6 @@
 use crate::*;
 
-pub async fn create_graphics_context(
-    window: Arc<Window>
-) -> GraphicsContext {
+pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
     let size = window.inner_size();
     let window_config = game_config();
 
@@ -11,7 +9,8 @@ pub async fn create_graphics_context(
         ..Default::default()
     });
 
-    let surface = instance.create_surface(window)
+    let surface = instance
+        .create_surface(window)
         .expect("Failed to create surface");
 
     trace!("Requesting adapter");
@@ -36,48 +35,31 @@ pub async fn create_graphics_context(
 
     // TODO: adapter.features();
 
-    let (device, queue) = adapter.request_device(
-        &DeviceDescriptor {
-            label: None,
-            required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
-            required_limits: limits,
-            
-            ..Default::default()
-        },
-        None
-    )
-    .await
-    .expect("failed to create wgpu adapter");
+    let (device, queue) = adapter
+        .request_device(
+            &DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                required_limits: limits,
+
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .expect("failed to create wgpu adapter");
 
     let caps = surface.get_capabilities(&adapter);
     let supported_formats = caps.formats;
     info!("Supported formats: {:?}", supported_formats);
 
-    let preferred_format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let _ = DEFAULT_TEXTURE_FORMAT.set(supported_formats[0]);
 
-    let monitor_surface_format =
-        if supported_formats.contains(&preferred_format) {
-            preferred_format
-        } else {
-            let fallback = supported_formats[0];
-
-            error!(
-                "Unsupported preferred surface format: {:?}. Using first \
-                 supported format: {:?}",
-                preferred_format, fallback
-            );
-
-            fallback
-        };
-
-    let _ = DEFAULT_TEXTURE_FORMAT.set(monitor_surface_format);
-
-    let surface_usage =
-        wgpu::TextureUsages::RENDER_ATTACHMENT;
+    let surface_usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
 
     let config = wgpu::SurfaceConfiguration {
         usage: surface_usage,
-        format: monitor_surface_format,
+        format: supported_formats[0],
         width: size.width.max(1),
         height: size.height.max(1),
         present_mode: PresentMode::Fifo,
@@ -99,18 +81,14 @@ pub async fn create_graphics_context(
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: true,
-                        },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(
-                        wgpu::SamplerBindingType::Filtering,
-                    ),
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -131,6 +109,6 @@ pub async fn create_graphics_context(
         surface: Some(Arc::new(surface)),
         instance: Arc::new(instance),
         config: Arc::new(RwLock::new(config)),
-        textures
+        textures,
     }
 }

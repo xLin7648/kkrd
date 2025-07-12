@@ -1,6 +1,6 @@
 use crate::*;
 
-use anyhow::{Result};
+use anyhow::Result;
 
 pub type PipelineMap = HashMap<String, wgpu::RenderPipeline>;
 pub type UserPipelineMap = HashMap<String, UserRenderPipeline>;
@@ -106,7 +106,6 @@ pub struct WgpuRenderer {
     pub sprite_shader_id: ShaderId,
     pub error_shader_id: ShaderId,
 
-    pub post_processing_effects: RefCell<Vec<PostProcessingEffect>>,
     pub render_texture_format: wgpu::TextureFormat,
 
     pub size: PhysicalSize<u32>,
@@ -115,9 +114,7 @@ pub struct WgpuRenderer {
     pub camera_bind_group: Arc<BindGroup>,
     pub camera_bind_group_layout: BindGroupLayout,
     // msaa_texture: wgpu::TextureView,
-
     pub msaa_texture: wgpu::TextureView,
-
     // main_camera: Option<Arc<Mutex<dyn camera::Camera>>>,
 }
 
@@ -264,7 +261,6 @@ impl WgpuRenderer {
             camera_bind_group_layout,
 
             render_texture_format: *DEFAULT_TEXTURE_FORMAT.get().unwrap(),
-            post_processing_effects: RefCell::new(Vec::new()),
 
             pipelines: HashMap::new(),
             user_pipelines: HashMap::new(),
@@ -290,22 +286,11 @@ impl WgpuRenderer {
             msaa_texture,
         };
 
-        {
-            let copy_shader_id = create_shader(
-                &mut renderer.shaders.borrow_mut(),
-                "copy",
-                &post_process_shader_from_fragment(COPY_SHADER_SRC),
-                HashMap::new(),
-            )
-            .expect("copy shader creation failed");
-
-            insert_post_processing_effect(&renderer, 0, "copy", copy_shader_id);
-        }
-
         renderer
     }
 
-    pub(crate) fn resize(&mut self, mut new_size: PhysicalSize<u32>){ //, present_mode: PresentMode) {
+    pub(crate) fn resize(&mut self, mut new_size: PhysicalSize<u32>) {
+        //, present_mode: PresentMode) {
         if new_size.width > 0 && new_size.height > 0 {
             new_size.width = new_size.width.max(1);
             new_size.height = new_size.height.max(1);
@@ -384,18 +369,18 @@ impl WgpuRenderer {
             clear_color,
             self.sprite_shader_id,
             self.error_shader_id,
-            &surface_view
+            &surface_view,
         );
-
-        let mut encoder =
-            self.context
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
 
         // 解析MSAA纹理到非MSAA的高精度纹理
         if game_config().sample_count != Msaa::Off {
+            let mut encoder =
+                self.context
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Msaa Encoder"),
+                    });
+
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("MSAA Resolve Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -403,16 +388,16 @@ impl WgpuRenderer {
                     resolve_target: Some(&surface_view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Discard,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
                 ..Default::default()
             });
+
+            self.context.queue.submit(std::iter::once(encoder.finish()));
             // 注意：我们不需要在这个通道中执行任何绘制操作，因为解析是自动进行的
         }
-
-        self.context.queue.submit(std::iter::once(encoder.finish()));
 
         output.present();
     }
@@ -434,8 +419,6 @@ impl WgpuRenderer {
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
     }
-
-    
 
     fn projection_matrix(&self) -> Mat4 {
         if let Some(camera) = &game_config().main_camera {

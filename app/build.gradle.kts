@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.example.wgpuapplication"
     compileSdk = 34
-    ndkVersion = "27.0.11718014"
+    ndkVersion = "28.0.12674087"
 
     defaultConfig {
         applicationId = "com.example.wgpuapplication"

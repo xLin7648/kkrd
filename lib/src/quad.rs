@@ -45,10 +45,8 @@ pub fn draw_poly2_z(
     vertices.push(SpriteVertex::new(vec3(x, y, z), vec2(0.0, 0.0), color));
 
     for i in 0..sides + 1 {
-        let rx =
-            (i as f32 / sides as f32 * std::f32::consts::PI * 2. + rot).cos();
-        let ry =
-            (i as f32 / sides as f32 * std::f32::consts::PI * 2. + rot).sin();
+        let rx = (i as f32 / sides as f32 * std::f32::consts::PI * 2. + rot).cos();
+        let ry = (i as f32 / sides as f32 * std::f32::consts::PI * 2. + rot).sin();
 
         let vertex = SpriteVertex::new(
             vec3(x + radius.x * rx, y + radius.y * ry, z),
@@ -83,13 +81,7 @@ pub fn draw_mesh_ex(mesh: Mesh, blend_mode: BlendMode) {
     queue_mesh_draw(mesh, blend_mode);
 }
 
-pub fn draw_line(
-    p1: Vec2,
-    p2: Vec2,
-    thickness: f32,
-    color: Color,
-    z_index: i32,
-) {
+pub fn draw_line(p1: Vec2, p2: Vec2, thickness: f32, color: Color, z_index: i32) {
     draw_line_tex(p1, p2, thickness, z_index, color, None);
 }
 
@@ -151,13 +143,7 @@ pub fn draw_line_tex(
     })
 }
 
-pub fn draw_rect_rot(
-    center: Vec2,
-    size: Vec2,
-    rotation: f32,
-    color: Color,
-    z_index: i32,
-) {
+pub fn draw_rect_rot(center: Vec2, size: Vec2, rotation: f32, color: Color, z_index: i32) {
     draw_quad(
         center,
         size,
@@ -178,12 +164,18 @@ pub fn draw_quad(
     texture: TextureHandle,
     scroll_offset: Vec2,
 ) {
-    draw_sprite_ex(texture, position, color, z_index, DrawTextureParams {
-        dest_size: Some(size),
-        scroll_offset,
-        rotation,
-        ..Default::default()
-    });
+    draw_sprite_ex(
+        texture,
+        position,
+        color,
+        z_index,
+        DrawTextureParams {
+            dest_size: Some(size),
+            scroll_offset,
+            rotation,
+            ..Default::default()
+        },
+    );
 }
 
 pub fn draw_sprite_ex(
@@ -284,7 +276,10 @@ impl Default for DrawTextureParams {
 
 impl DrawTextureParams {
     pub fn blend(blend_mode: BlendMode) -> DrawTextureParams {
-        DrawTextureParams { blend_mode, ..Default::default() }
+        DrawTextureParams {
+            blend_mode,
+            ..Default::default()
+        }
     }
 }
 
@@ -301,14 +296,12 @@ pub fn rotated_rectangle(
 
     let dims = params
         .source_rect
-        .map(|rect| {
-            IRect {
-                size: rect.size,
-                offset: ivec2(
-                    rect.offset.x,
-                    tex_height as i32 - rect.offset.y - rect.size.y,
-                ),
-            }
+        .map(|rect| IRect {
+            size: rect.size,
+            offset: ivec2(
+                rect.offset.x,
+                tex_height as i32 - rect.offset.y - rect.size.y,
+            ),
         })
         .unwrap_or(IRect::new(
             ivec2(0, 0),

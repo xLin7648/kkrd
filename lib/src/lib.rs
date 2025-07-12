@@ -6,10 +6,10 @@ mod camera;
 mod color;
 mod config;
 mod device;
+mod fpslimiter;
 mod gameloop;
 mod graphic;
 mod pipelines;
-mod post_processing;
 mod quad;
 mod rect;
 mod render_pass;
@@ -19,21 +19,20 @@ mod texture;
 mod time;
 mod utils;
 mod y_sort;
-mod fpslimiter;
 
 // 其他可能导入的模块
-use assets::*;
 use app_events::*;
+use assets::*;
 use batching::*;
 use camera::*;
 use color::*;
 use colors::*;
 use config::*;
 use device::*;
+use fpslimiter::*;
 use gameloop::*;
 use graphic::*;
 use pipelines::*;
-use post_processing::*;
 use quad::*;
 use rect::*;
 use render_pass::*;
@@ -43,7 +42,6 @@ use texture::*;
 use time::*;
 use utils::*;
 use y_sort::*;
-use fpslimiter::*;
 
 // 外部依赖库的导入
 use glam::*;
@@ -61,7 +59,7 @@ use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap},
     hash::{DefaultHasher, Hasher},
-    sync::{atomic::*, Arc, OnceLock},
+    sync::{Arc, OnceLock, atomic::*},
     time::{Duration, Instant},
 };
 
@@ -84,7 +82,10 @@ use winit::{
     window::*,
 };
 
-use tokio::{ runtime::Runtime, sync::{mpsc, oneshot} };
+use tokio::{
+    runtime::Runtime,
+    sync::{mpsc, oneshot},
+};
 
 // 线程间通信消息
 #[allow(dead_code)]
@@ -124,11 +125,7 @@ fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
 
 // 主函数
 fn main() {
-    init_game_config(
-        "New Game!!!".to_string(),
-        "v0.0.1",
-        _init_default_config,
-    );
+    init_game_config("New Game!!!".to_string(), "v0.0.1", _init_default_config);
 
     start_game(MyGame::default());
 }

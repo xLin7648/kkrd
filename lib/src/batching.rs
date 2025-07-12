@@ -7,7 +7,7 @@ pub fn run_batched_render_passes(
     clear_color: Color,
     sprite_shader_id: ShaderId,
     error_shader_id: ShaderId,
-    default_surface_view: &TextureView
+    default_surface_view: &TextureView,
 ) {
     let mut is_first = true;
 
@@ -33,14 +33,10 @@ pub fn run_batched_render_passes(
     //     render_passes
     // };
 
-    for (key, mut meshes) in
-        queues.into_iter().sorted_by_key(|(k, _)| k.z_index)
-    {
+    for (key, mut meshes) in queues.into_iter().sorted_by_key(|(k, _)| k.z_index) {
         // TODO: add this back later
         if get_y_sort(key.z_index) {
-            meshes.sort_by_key(|mesh| {
-                OrderedFloat::<f32>(-(mesh.origin.y + mesh.y_sort_offset))
-            });
+            meshes.sort_by_key(|mesh| OrderedFloat::<f32>(-(mesh.origin.y + mesh.y_sort_offset)));
         }
 
         render_meshes(
@@ -56,9 +52,8 @@ pub fn run_batched_render_passes(
             },
             sprite_shader_id,
             error_shader_id,
-            default_surface_view
+            default_surface_view,
         );
-
 
         is_first = false;
     }
@@ -77,7 +72,7 @@ pub fn run_batched_render_passes(
             },
             sprite_shader_id,
             error_shader_id,
-            default_surface_view
+            default_surface_view,
         );
 
         // MeshGroupKey {
@@ -105,7 +100,7 @@ pub fn render_meshes(
     pass_data: MeshDrawData,
     sprite_shader_id: ShaderId,
     _error_shader_id: ShaderId,
-    default_surface_view: &TextureView
+    default_surface_view: &TextureView,
 ) {
     let pipeline_name = ensure_pipeline_exists(c, &pass_data, sprite_shader_id);
 
@@ -151,41 +146,37 @@ pub fn render_meshes(
             c.msaa_texture.as_mut().unwrap()
         }; */
 
-        let surface= if game_config().sample_count != Msaa::Off { 
+        let surface = if game_config().sample_count != Msaa::Off {
             &c.msaa_texture
-        } else { 
+        } else {
             &default_surface_view
         };
 
-        let mut render_pass =
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Mesh Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: surface,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: color_to_clear_op(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: depth_stencil_attachment(
-                    c.enable_z_buffer,
-                    &c.depth_texture.view,
-                    is_first,
-                ),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Mesh Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: surface,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: color_to_clear_op(clear_color),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: depth_stencil_attachment(
+                c.enable_z_buffer,
+                &c.depth_texture.view,
+                is_first,
+            ),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
 
         let mesh_pipeline = c
             .user_pipelines
             .get(&pipeline_name)
             .map(RenderPipeline::User)
-            .or_else(|| {
-                c.pipelines.get(&pipeline_name).map(RenderPipeline::Wgpu)
-            })
+            .or_else(|| c.pipelines.get(&pipeline_name).map(RenderPipeline::Wgpu))
             .expect("ensured pipeline must exist within the same frame");
-
 
         match &mesh_pipeline {
             RenderPipeline::User(pipeline) => {
@@ -199,10 +190,8 @@ pub fn render_meshes(
         render_pass.set_vertex_buffer(0, c.vertex_buffer.buffer.slice(..));
 
         if !all_indices.is_empty() {
-            render_pass.set_index_buffer(
-                c.index_buffer.buffer.slice(..),
-                wgpu::IndexFormat::Uint32,
-            );
+            render_pass
+                .set_index_buffer(c.index_buffer.buffer.slice(..), wgpu::IndexFormat::Uint32);
         }
 
         /* let tex_bind_group = match tex_handle {
@@ -248,5 +237,4 @@ pub fn render_meshes(
     }
 
     c.context.queue.submit(std::iter::once(encoder.finish()));
-    
 }
