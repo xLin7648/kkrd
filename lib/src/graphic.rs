@@ -1,6 +1,7 @@
 use crate::*;
 
 use anyhow::Result;
+use wgpu::TextureView;
 
 pub type PipelineMap = HashMap<String, wgpu::RenderPipeline>;
 pub type UserPipelineMap = HashMap<String, UserRenderPipeline>;
@@ -106,15 +107,13 @@ pub struct WgpuRenderer {
     pub sprite_shader_id: ShaderId,
     pub error_shader_id: ShaderId,
 
-    pub render_texture_format: wgpu::TextureFormat,
-
     pub size: PhysicalSize<u32>,
     pub camera_uniform: CameraUniform,
     pub camera_buffer: Buffer,
     pub camera_bind_group: Arc<BindGroup>,
     pub camera_bind_group_layout: BindGroupLayout,
     // msaa_texture: wgpu::TextureView,
-    pub msaa_texture: wgpu::TextureView,
+    pub msaa_texture: (TextureView, Option<TextureView>),
     // main_camera: Option<Arc<Mutex<dyn camera::Camera>>>,
 }
 
@@ -132,6 +131,14 @@ impl WgpuRenderer {
                 &context,
                 "1px",
                 include_bytes!("assets/1px.png"),
+                textures,
+                wgpu::AddressMode::Repeat,
+            );
+
+            load_texture_from_engine_bytes(
+                &context,
+                "Tap",
+                include_bytes!("assets/Tap2.png"),
                 textures,
                 wgpu::AddressMode::Repeat,
             );
@@ -260,8 +267,6 @@ impl WgpuRenderer {
             camera_bind_group,
             camera_bind_group_layout,
 
-            render_texture_format: *DEFAULT_TEXTURE_FORMAT.get().unwrap(),
-
             pipelines: HashMap::new(),
             user_pipelines: HashMap::new(),
 
@@ -384,14 +389,21 @@ impl WgpuRenderer {
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("MSAA Resolve Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.msaa_texture,
+                    view: &self.msaa_texture.0,
                     resolve_target: Some(&surface_view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.msaa_texture.1.as_ref().unwrap(), // MSAA 深度附件
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 ..Default::default()
             });
 

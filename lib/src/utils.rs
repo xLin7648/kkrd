@@ -451,26 +451,47 @@ pub fn create_multisampled_framebuffer(
     device: &wgpu::Device,
     config: &wgpu::SurfaceConfiguration,
     sample_count: u32,
-) -> wgpu::TextureView {
-    let multisampled_texture_extent = wgpu::Extent3d {
-        width: config.width,
-        height: config.height,
-        depth_or_array_layers: 1,
-    };
-    let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
-        size: multisampled_texture_extent,
+) -> (wgpu::TextureView, Option<wgpu::TextureView>) {
+    // 1. 优先选择移动端兼容格式
+    let format = config.format;
+
+    // 2. 创建 MSAA 颜色纹理
+    let color_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Multisampled Color Attachment"),
+        size: wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count,
         dimension: wgpu::TextureDimension::D2,
-        format: config.format,
+        format, // 使用调整后的格式
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        label: Some("Multisampled frame descriptor"),
-        view_formats: &[],
-    };
+        view_formats: &[format], // 关键修复：声明视图格式
+    });
 
-    device
-        .create_texture(multisampled_frame_descriptor)
-        .create_view(&wgpu::TextureViewDescriptor::default())
+    // 3. 创建 MSAA 深度纹理（移动端必需）
+    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Multisampled Depth Attachment"),
+        size: wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float, // 或 Depth24Plus
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+
+    // 4. 返回视图
+    (
+        color_texture.create_view(&wgpu::TextureViewDescriptor::default()),
+        Some(depth_texture.create_view(&wgpu::TextureViewDescriptor::default())),
+    )
 }
 
 pub fn create_hdr_texture(
@@ -603,4 +624,14 @@ pub fn create_hdr_bind_group(
         ],
         label: Some("hdr_bind_group"),
     })
+}
+
+pub fn is_mobile() -> bool {
+    // 实际实现根据目标平台判断
+    #[cfg(target_os = "android")]
+    return true;
+    #[cfg(target_os = "ios")]
+    return true;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    return false;
 }

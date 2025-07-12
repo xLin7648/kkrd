@@ -2,8 +2,8 @@ use image::DynamicImage;
 use image::GenericImageView;
 use image::ImageResult;
 
-use crate::utils::DeviceExtensions;
 use crate::DEFAULT_TEXTURE_FORMAT;
+use crate::utils::DeviceExtensions;
 
 #[derive(Debug)]
 pub struct TextureCreationParams<'a> {
@@ -48,10 +48,12 @@ impl BindableTexture {
 
         let label = params.label.map(|x| format!("{} Bind Group", x));
 
-        let bind_group =
-            device.simple_bind_group(label.as_deref(), &texture, layout);
+        let bind_group = device.simple_bind_group(label.as_deref(), &texture, layout);
 
-        Self { texture, bind_group }
+        Self {
+            texture,
+            bind_group,
+        }
     }
 }
 
@@ -63,8 +65,7 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub const DEPTH_FORMAT: wgpu::TextureFormat =
-        wgpu::TextureFormat::Depth32Float;
+    pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn create_depth_texture(
         device: &wgpu::Device,
@@ -84,8 +85,7 @@ impl Texture {
             sample_count: crate::config::game_config().sample_count.clone().into(),
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT |
-                wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
 
@@ -105,18 +105,17 @@ impl Texture {
             ..Default::default()
         });
 
-        Self { texture, view, sampler }
+        Self {
+            texture,
+            view,
+            sampler,
+        }
     }
 
-    pub fn create_with_params(
-        device: &wgpu::Device,
-        params: &TextureCreationParams,
-    ) -> Self {
+    pub fn create_with_params(device: &wgpu::Device, params: &TextureCreationParams) -> Self {
         let size = wgpu::Extent3d {
-            width: ((params.width as f32) * params.render_scale.sqrt()).round()
-                as u32,
-            height: ((params.height as f32) * params.render_scale.sqrt())
-                .round() as u32,
+            width: ((params.width as f32) * params.render_scale.sqrt()).round() as u32,
+            height: ((params.height as f32) * params.render_scale.sqrt()).round() as u32,
             depth_or_array_layers: 1,
         };
 
@@ -127,9 +126,9 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: params.format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING |
-                wgpu::TextureUsages::COPY_DST |
-                wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: params.view_formats,
         });
 
@@ -176,16 +175,19 @@ impl Texture {
         filter_mode: wgpu::FilterMode,
         label: &str,
     ) -> Self {
-        Self::create_with_params(device, &TextureCreationParams {
-            label: Some(label),
-            width: config.width,
-            height: config.height,
-            format,
-            mip_level_count,
-            filter_mode,
-            render_scale,
-            view_formats: &[],
-        })
+        Self::create_with_params(
+            device,
+            &TextureCreationParams {
+                label: Some(label),
+                width: config.width,
+                height: config.height,
+                format,
+                mip_level_count,
+                filter_mode,
+                render_scale,
+                view_formats: &[],
+            },
+        )
     }
 
     pub fn from_bytes(
@@ -196,8 +198,7 @@ impl Texture {
         is_normal_map: bool,
     ) -> ImageResult<(DynamicImage, Self)> {
         let img = image::load_from_memory(bytes)?;
-        let tex =
-            Self::from_image(device, queue, &img, Some(label), is_normal_map)?;
+        let tex = Self::from_image(device, queue, &img, Some(label), is_normal_map)?;
 
         Ok((img, tex))
     }
@@ -227,20 +228,22 @@ impl Texture {
         is_normal_map: bool,
         address_mode: wgpu::AddressMode,
     ) -> ImageResult<Self> {
+        let format = *DEFAULT_TEXTURE_FORMAT.get().unwrap();
         let format = if is_normal_map {
-            *DEFAULT_TEXTURE_FORMAT.get().unwrap()
+            if format.is_srgb() {
+                format
+            } else {
+                format.add_srgb_suffix()
+            }
         } else {
-           (*DEFAULT_TEXTURE_FORMAT.get().unwrap()).remove_srgb_suffix()
+            if format.is_srgb() {
+                format.remove_srgb_suffix()
+            } else {
+                format
+            }
         };
 
-        Self::from_image_with_format(
-            device,
-            queue,
-            img,
-            label,
-            address_mode,
-            format,
-        )
+        Self::from_image_with_format(device, queue, img, label, address_mode, format)
     }
 
     pub fn from_image_with_format(
@@ -290,8 +293,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING |
-                wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
@@ -324,7 +326,11 @@ impl Texture {
             ..Default::default()
         });
 
-        Ok(Self { texture, view, sampler })
+        Ok(Self {
+            texture,
+            view,
+            sampler,
+        })
     }
 
     pub fn from_image_uninit(
@@ -343,7 +349,11 @@ impl Texture {
         height: u32,
         label: Option<&str>,
     ) -> ImageResult<Self> {
-        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label,
@@ -352,8 +362,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: *DEFAULT_TEXTURE_FORMAT.get().unwrap(),
-            usage: wgpu::TextureUsages::TEXTURE_BINDING |
-                wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
@@ -369,6 +378,10 @@ impl Texture {
             ..Default::default()
         });
 
-        Ok(Self { texture, view, sampler })
+        Ok(Self {
+            texture,
+            view,
+            sampler,
+        })
     }
 }

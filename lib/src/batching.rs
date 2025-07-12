@@ -147,9 +147,9 @@ pub fn render_meshes(
         }; */
 
         let surface = if game_config().sample_count != Msaa::Off {
-            &c.msaa_texture
+            &c.msaa_texture.0
         } else {
-            &default_surface_view
+            default_surface_view
         };
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

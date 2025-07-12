@@ -50,16 +50,35 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
         .expect("failed to create wgpu adapter");
 
     let caps = surface.get_capabilities(&adapter);
-    let supported_formats = caps.formats;
-    info!("Supported formats: {:?}", supported_formats);
 
-    let _ = DEFAULT_TEXTURE_FORMAT.set(supported_formats[0]);
+    error!("Supported formats: {:?}", caps.formats);
+
+    // 1. 动态选择支持的格式
+    let format = if caps.formats.contains(&wgpu::TextureFormat::Rgba8Unorm) {
+        wgpu::TextureFormat::Rgba8Unorm
+    } else if caps.formats.contains(&wgpu::TextureFormat::Bgra8Unorm) {
+        wgpu::TextureFormat::Bgra8Unorm
+    } else if caps.formats.contains(&wgpu::TextureFormat::Rgba16Float) {
+        // 使用高动态范围格式
+        wgpu::TextureFormat::Rgba16Float
+    } else if let Some(&fallback) = caps.formats.first() {
+        // 使用设备支持的第一个格式
+        log::warn!("Using fallback format: {:?}", fallback);
+        fallback
+    } else {
+        // 没有支持的格式 - 严重错误
+        panic!("No supported surface formats available!");
+    };
+
+    error!("Supported format: {:?}", format);
+
+    let _ = DEFAULT_TEXTURE_FORMAT.set(format);
 
     let surface_usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
 
     let config = wgpu::SurfaceConfiguration {
         usage: surface_usage,
-        format: supported_formats[0],
+        format: format,
         width: size.width.max(1),
         height: size.height.max(1),
         present_mode: PresentMode::Fifo,

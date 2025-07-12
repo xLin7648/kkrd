@@ -25,7 +25,7 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
         use winit::platform::windows::EventLoopBuilderExtWindows;
 
         env_logger::builder()
-            .filter_level(LevelFilter::Info) // 默认日志级别
+            .filter_level(LevelFilter::Error) // 默认日志级别
             .parse_default_env()
             .init();
 
@@ -37,7 +37,7 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
         use android_logger::Config;
         use winit::platform::android::EventLoopBuilderExtAndroid;
 
-        android_logger::init_once(Config::default().with_max_level(LevelFilter::Info));
+        android_logger::init_once(Config::default().with_max_level(LevelFilter::Error));
 
         let msg = "?error";
         event_loop_builder.with_android_app(ANDROID_APP.get().expect(msg).clone());
