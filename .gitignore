@@ -1,2 +1,3 @@
 /lib/target
 /.gradle
+.DS_Store
