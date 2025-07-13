@@ -20,12 +20,17 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
 
     let mut event_loop_builder = EventLoop::<WinitMessage>::with_user_event();
 
+    env_logger::builder()
+        .filter_level(LevelFilter::Info) // 默认日志级别
+        .parse_default_env()
+        .init();
+
     #[cfg(target_os = "windows")]
     {
         use winit::platform::windows::EventLoopBuilderExtWindows;
 
         env_logger::builder()
-            .filter_level(LevelFilter::Error) // 默认日志级别
+            .filter_level(LevelFilter::Info) // 默认日志级别
             .parse_default_env()
             .init();
 
@@ -37,7 +42,7 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
         use android_logger::Config;
         use winit::platform::android::EventLoopBuilderExtAndroid;
 
-        android_logger::init_once(Config::default().with_max_level(LevelFilter::Error));
+        android_logger::init_once(Config::default().with_max_level(LevelFilter::Info));
 
         let msg = "?error";
         event_loop_builder.with_android_app(ANDROID_APP.get().expect(msg).clone());
@@ -54,7 +59,7 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
     // 启动游戏循环任务
     rt.spawn(async move {
         // 等待窗口初始化完成
-        while !game_config().init_end {
+        while !game_config().lock().init_end {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
@@ -100,7 +105,8 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
 
 impl App {
     pub fn init_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window_config = game_config();
+        let binding = game_config();
+        let window_config = binding.lock();
 
         let fullscreen = if window_config.fullscreen {
             Some(Fullscreen::Borderless(None))
@@ -163,7 +169,7 @@ impl ApplicationHandler<WinitMessage> for App {
 
             self.wr = Some(WgpuRenderer::new(self.window.clone().unwrap()).block_on());
 
-            game_config_mut().init_end = true;
+            game_config().lock().init_end = true;
         }
     }
 

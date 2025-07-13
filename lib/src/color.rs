@@ -140,11 +140,6 @@ impl Color {
 
         Self::from_rgba(bytes[1], bytes[2], bytes[3], 255)
     }
-
-    /// Create a vec4 of red, green, blue, and alpha components.
-    pub const fn to_vec(&self) -> Vec4 {
-        vec4(self.r, self.g, self.b, self.a)
-    }
 }
 
 pub mod colors {
@@ -212,18 +207,10 @@ pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> Color {
 
 pub fn rgb_to_hsl(color: Color) -> (f32, f32, f32) {
     fn max(a: f32, b: f32) -> f32 {
-        if a > b {
-            a
-        } else {
-            b
-        }
+        if a > b { a } else { b }
     }
     fn min(a: f32, b: f32) -> f32 {
-        if a < b {
-            a
-        } else {
-            b
-        }
+        if a < b { a } else { b }
     }
 
     let Color { r, g, b, .. } = color;

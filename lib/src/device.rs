@@ -1,11 +1,26 @@
+use wgpu::{TextureFormat, TextureUsages};
+
 use crate::*;
 
 pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
     let size = window.inner_size();
-    let window_config = game_config();
+    let binding = game_config();
+    let window_config = binding.lock();
+
+    let default_backends = if cfg!(all(
+        feature = "webgl",
+        target_arch = "wasm32",
+        not(feature = "webgpu")
+    )) {
+        Backends::GL
+    } else if cfg!(all(feature = "webgpu", target_arch = "wasm32")) {
+        Backends::BROWSER_WEBGPU
+    } else {
+        Backends::all()
+    };
 
     let instance = Instance::new(&InstanceDescriptor {
-        backends: Backends::VULKAN,
+        backends: default_backends,
         ..Default::default()
     });
 
@@ -53,38 +68,38 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
 
     error!("Supported formats: {:?}", caps.formats);
 
-    // 1. 动态选择支持的格式
-    let format = if caps.formats.contains(&wgpu::TextureFormat::Rgba8Unorm) {
-        wgpu::TextureFormat::Rgba8Unorm
-    } else if caps.formats.contains(&wgpu::TextureFormat::Bgra8Unorm) {
-        wgpu::TextureFormat::Bgra8Unorm
-    } else if caps.formats.contains(&wgpu::TextureFormat::Rgba16Float) {
-        // 使用高动态范围格式
-        wgpu::TextureFormat::Rgba16Float
-    } else if let Some(&fallback) = caps.formats.first() {
-        // 使用设备支持的第一个格式
-        log::warn!("Using fallback format: {:?}", fallback);
-        fallback
-    } else {
-        // 没有支持的格式 - 严重错误
-        panic!("No supported surface formats available!");
-    };
+    let formats = caps.formats;
+    // For future HDR output support, we'll need to request a format that supports HDR,
+    // but as of wgpu 0.15 that is not yet supported.
+    // Prefer sRGB formats for surfaces, but fall back to first available format if no sRGB formats are available.
+    let mut format = *formats.first().expect("No supported formats for surface");
+    for available_format in formats {
+        // Rgba8UnormSrgb and Bgra8UnormSrgb and the only sRGB formats wgpu exposes that we can use for surfaces.
+        if available_format == TextureFormat::Rgba8UnormSrgb
+            || available_format == TextureFormat::Bgra8UnormSrgb
+        {
+            format = available_format;
+            break;
+        }
+    }
 
     error!("Supported format: {:?}", format);
 
     let _ = DEFAULT_TEXTURE_FORMAT.set(format);
 
-    let surface_usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
-
     let config = wgpu::SurfaceConfiguration {
-        usage: surface_usage,
+        usage: TextureUsages::RENDER_ATTACHMENT,
         format: format,
         width: size.width.max(1),
         height: size.height.max(1),
         present_mode: PresentMode::Fifo,
         alpha_mode: caps.alpha_modes[0],
         desired_maximum_frame_latency: 2,
-        view_formats: vec![],
+        view_formats: if !format.is_srgb() {
+            vec![format.add_srgb_suffix()]
+        } else {
+            vec![]
+        },
     };
 
     trace!("Configuring surface");

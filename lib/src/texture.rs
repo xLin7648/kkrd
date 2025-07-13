@@ -1,6 +1,7 @@
 use image::DynamicImage;
 use image::GenericImageView;
 use image::ImageResult;
+use log::info;
 
 use crate::DEFAULT_TEXTURE_FORMAT;
 use crate::utils::DeviceExtensions;
@@ -82,7 +83,11 @@ impl Texture {
             label: Some(label),
             size,
             mip_level_count: 1,
-            sample_count: crate::config::game_config().sample_count.clone().into(),
+            sample_count: crate::config::game_config()
+                .lock()
+                .sample_count
+                .clone()
+                .into(),
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -228,21 +233,11 @@ impl Texture {
         is_normal_map: bool,
         address_mode: wgpu::AddressMode,
     ) -> ImageResult<Self> {
-        let format = *DEFAULT_TEXTURE_FORMAT.get().unwrap();
-        let format = if is_normal_map {
-            if format.is_srgb() {
-                format
-            } else {
-                format.add_srgb_suffix()
-            }
+        let format: wgpu::TextureFormat = if is_normal_map {
+            wgpu::TextureFormat::Rgba8UnormSrgb
         } else {
-            if format.is_srgb() {
-                format.remove_srgb_suffix()
-            } else {
-                format
-            }
+            wgpu::TextureFormat::Rgba8Unorm
         };
-
         Self::from_image_with_format(device, queue, img, label, address_mode, format)
     }
 

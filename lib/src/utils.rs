@@ -2,6 +2,7 @@ use crate::*;
 
 use anyhow::*;
 use image::DynamicImage;
+use wgpu::TextureFormat;
 
 pub const FRAG_SHADER_PREFIX: &str = include_str!("shaders/frag-shader-prefix.wgsl");
 
@@ -377,7 +378,7 @@ pub fn create_render_pipeline(
         }),
 
         multisample: wgpu::MultisampleState {
-            count: game_config().sample_count.clone().into(),
+            count: game_config().lock().sample_count.clone().into(),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

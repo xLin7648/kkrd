@@ -256,7 +256,7 @@ impl WgpuRenderer {
         let msaa_texture = create_multisampled_framebuffer(
             &context.device,
             &context.config.read(),
-            game_config().sample_count.clone().into(),
+            game_config().lock().sample_count.clone().into(),
         );
 
         let renderer = Self {
@@ -301,7 +301,7 @@ impl WgpuRenderer {
             new_size.height = new_size.height.max(1);
             self.size = new_size;
 
-            if let Some(main_camera) = &game_config().main_camera {
+            if let Some(main_camera) = &game_config().lock().main_camera {
                 main_camera.write().resize(new_size);
             }
 
@@ -331,7 +331,7 @@ impl WgpuRenderer {
         self.msaa_texture = create_multisampled_framebuffer(
             &self.context.device,
             &self.context.config.read(),
-            game_config().sample_count.clone().into(),
+            game_config().lock().sample_count.clone().into(),
         );
     }
 
@@ -351,7 +351,7 @@ impl WgpuRenderer {
     }
 
     pub(crate) fn draw(&mut self) {
-        let clear_color = game_config().clear_color;
+        let clear_color = game_config().lock().clear_color;
 
         // 检查 surface 是否可用
         let output = {
@@ -378,7 +378,7 @@ impl WgpuRenderer {
         );
 
         // 解析MSAA纹理到非MSAA的高精度纹理
-        if game_config().sample_count != Msaa::Off {
+        if game_config().lock().sample_count != Msaa::Off {
             let mut encoder =
                 self.context
                     .device
@@ -433,7 +433,7 @@ impl WgpuRenderer {
     }
 
     fn projection_matrix(&self) -> Mat4 {
-        if let Some(camera) = &game_config().main_camera {
+        if let Some(camera) = &game_config().lock().main_camera {
             camera.read().matrix()
         } else {
             self.pixel_perfect_projection_matrix()

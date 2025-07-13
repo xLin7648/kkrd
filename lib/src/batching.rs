@@ -146,7 +146,7 @@ pub fn render_meshes(
             c.msaa_texture.as_mut().unwrap()
         }; */
 
-        let surface = if game_config().sample_count != Msaa::Off {
+        let surface = if game_config().lock().sample_count != Msaa::Off {
             &c.msaa_texture.0
         } else {
             default_surface_view
