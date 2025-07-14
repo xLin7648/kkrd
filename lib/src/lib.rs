@@ -71,6 +71,7 @@ use wgpu::{
     PipelineCompilationOptions, PowerPreference, PresentMode, Queue, ShaderStages, Surface,
     SurfaceConfiguration,
     util::{self, DeviceExt},
+    TextureFormat
 };
 
 // Winit 相关的导入
@@ -91,6 +92,7 @@ use tokio::{
 #[allow(dead_code)]
 #[derive(Debug)]
 enum WinitMessage {
+    CheckInit(oneshot::Sender<bool>),
     RenderFrame(oneshot::Sender<()>), // 请求渲染帧
     Exit,                             // 退出信号
 }
@@ -111,7 +113,7 @@ pub fn get_window_size() -> PhysicalSize<u32> {
     }
 }
 
-pub static DEFAULT_TEXTURE_FORMAT: OnceLock<wgpu::TextureFormat> = OnceLock::new();
+pub static DEFAULT_TEXTURE_FORMAT: OnceLock<TextureFormat> = OnceLock::new();
 
 #[cfg(target_os = "android")]
 pub static ANDROID_APP: OnceLock<winit::platform::android::activity::AndroidApp> = OnceLock::new();
@@ -125,16 +127,22 @@ fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
 
 // 主函数
 fn main() {
-    init_game_config("New Game!!!".to_string(), "v0.0.1", _init_default_config);
+    let init_game_config = InitGameConfig {
+        version: "v0.0.1",
+        window_config: WindowConfig {
+            title_name: "New Game!!!".to_owned(),
+            fullscreen: false,
+            resolution: Size::Physical(PhysicalSize::new(1280, 720)),
+            min_resolution: Some(Size::Physical(PhysicalSize::new(1280, 720))),
+        },
+    };
 
-    start_game(MyGame::default());
-}
+    let run_time_context = RunTimeContext {
+        target_frame_rate: Some(120),
+        sample_count: Msaa::Sample4,
+        clear_color: BLACK,
+        main_camera: None,
+    };
 
-pub fn _init_default_config(mut config: GameConfig) -> GameConfig {
-    config.resolution = Some(Size::Physical(PhysicalSize::new(1280, 720)));
-    config.power_preference = PowerPreference::HighPerformance;
-    config.sample_count = Msaa::Sample4;
-    config.target_frame_rate = None;
-    config.fullscreen = false;
-    config
+    init_game(init_game_config, run_time_context,MyGame::default());
 }

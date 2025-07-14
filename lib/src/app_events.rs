@@ -1,29 +1,38 @@
 use crate::*;
 use pollster::FutureExt;
+use winit::platform::windows::{BackdropType, WindowAttributesExtWindows};
 
 #[derive(Default)]
 struct App {
     pub runtime: Option<Box<Runtime>>,
     pub window: Option<Arc<Window>>,
     pub wr: Option<WgpuRenderer>,
+
+    pub init_game_config: InitGameConfig
 }
 
-pub fn start_game(mut game: impl GameLoop + 'static) {
+pub fn init_game(
+    init_game_config: InitGameConfig,
+    run_time_context: RunTimeContext,
+    mut game: impl GameLoop + 'static,
+) {
+    let _ = RUN_TIME_CONTEXT.set(Arc::new(RwLock::new(run_time_context)));
+
     // 创建高精度Tokio运行时
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_time()
         .build()
         .expect("Failed to create Tokio runtime");
 
-    // 创建通信通道
-    let (tx, mut rx) = mpsc::unbounded_channel::<WinitMessage>();
-
     let mut event_loop_builder = EventLoop::<WinitMessage>::with_user_event();
 
-    env_logger::builder()
-        .filter_level(LevelFilter::Info) // 默认日志级别
-        .parse_default_env()
-        .init();
+    #[cfg(target_os = "macos")]
+    {
+        env_logger::builder()
+            .filter_level(LevelFilter::Info) // 默认日志级别
+            .parse_default_env()
+            .init();
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -59,8 +68,34 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
     // 启动游戏循环任务
     rt.spawn(async move {
         // 等待窗口初始化完成
-        while !game_config().lock().init_end {
+
+        loop {
+            let (check_init_tx, check_init_rx) = oneshot::channel::<bool>();
+
+            if let Err(e) = event_loop_proxy.send_event(WinitMessage::CheckInit(check_init_tx)) {
+                error!("Init Error: {}", e);
+                exit(&event_loop_proxy);
+            }
+
+            match check_init_rx.await {
+                Ok(val) => {
+                    if val {
+                        info!("Init!!!");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Init Error: {}", e);
+                    exit(&event_loop_proxy);
+                }
+            }
+
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+            fn exit(event_loop_proxy: &EventLoopProxy<WinitMessage>) {
+                let _ = event_loop_proxy.send_event(WinitMessage::Exit);
+                return;
+            }
         }
 
         // 执行游戏初始化
@@ -89,13 +124,14 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
             // 更新timer
             time::update();
 
-            #[cfg(not(target_os = "android"))]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             framerate_limiter();
         }
     });
 
     let mut app = App {
         runtime: Some(Box::new(rt)),
+        init_game_config,
         ..Default::default()
     };
 
@@ -104,28 +140,45 @@ pub fn start_game(mut game: impl GameLoop + 'static) {
 }
 
 impl App {
-    pub fn init_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let binding = game_config();
-        let window_config = binding.lock();
+    pub fn init_window(&mut self, event_loop: &ActiveEventLoop) {
+        let wc = &self.init_game_config.window_config;
+        let wa = WindowAttributes::default()
+            .with_title(wc.title_name.clone())
+            .with_inner_size(wc.resolution)
+            .with_min_inner_size(
+                wc.min_resolution.unwrap_or(
+                    Size::Physical(
+                        PhysicalSize::new(1, 1)
+                    )
+                )
+            )
+            .with_fullscreen(if wc.fullscreen {
+                Some(Fullscreen::Borderless(None))
+            } else {
+                None
+            });
 
-        let fullscreen = if window_config.fullscreen {
-            Some(Fullscreen::Borderless(None))
-        } else {
-            None
-        };
-
-        let mut window_attributes = WindowAttributes::default();
-        window_attributes.title = window_config.title_name.clone();
-        window_attributes.inner_size = window_config.resolution;
-        window_attributes.min_inner_size = window_config.min_resolution;
-        window_attributes.fullscreen = fullscreen;
-
-        match event_loop.create_window(window_attributes) {
+        match event_loop.create_window(wa) {
             Ok(window) => {
                 self.window = Some(Arc::new(window));
                 let _ = GLOBAL_WINDOW.set(self.window.clone().unwrap());
             }
             Err(_) => event_loop.exit(),
+        }
+    }
+
+    pub fn set_window(&mut self, window_config: &WindowConfig) {
+        if let Some(window) = self.window.as_mut() {
+            window.set_title(&window_config.title_name);
+
+            window.request_inner_size(window_config.resolution);
+            window.set_min_inner_size(window_config.min_resolution);
+
+            window.set_fullscreen(if window_config.fullscreen {
+                Some(Fullscreen::Borderless(None))
+            } else {
+                None
+            });
         }
     }
 
@@ -143,6 +196,11 @@ impl App {
 impl ApplicationHandler<WinitMessage> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WinitMessage) {
         match event {
+            WinitMessage::CheckInit(tx) => {
+                if let Err(_) = tx.send(self.window.is_some() && self.wr.is_some()) {
+                    warn!("Failed to send check init");
+                }
+            }
             WinitMessage::RenderFrame(completion_tx) => {
                 self.renderer_update();
 
@@ -156,7 +214,7 @@ impl ApplicationHandler<WinitMessage> for App {
     }
 
     // 当应用程序从挂起状态恢复时调用此方法
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(window) = &self.window {
             if let Some(wr) = &mut self.wr {
                 wr.context.resume(window.clone());
@@ -166,17 +224,14 @@ impl ApplicationHandler<WinitMessage> for App {
         } else {
             // 从桌面回来不会执行
             self.init_window(event_loop);
-
             self.wr = Some(WgpuRenderer::new(self.window.clone().unwrap()).block_on());
-
-            game_config().lock().init_end = true;
         }
     }
 
     // 处理窗口相关的事件
     fn window_event(
         &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         _: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {

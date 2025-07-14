@@ -1,7 +1,7 @@
 use image::DynamicImage;
 use image::GenericImageView;
 use image::ImageResult;
-use log::info;
+use wgpu::TextureFormat;
 
 use crate::DEFAULT_TEXTURE_FORMAT;
 use crate::utils::DeviceExtensions;
@@ -11,11 +11,11 @@ pub struct TextureCreationParams<'a> {
     pub label: Option<&'a str>,
     pub width: u32,
     pub height: u32,
-    pub format: wgpu::TextureFormat,
+    pub format: TextureFormat,
     pub mip_level_count: u32,
     pub filter_mode: wgpu::FilterMode,
     pub render_scale: f32,
-    pub view_formats: &'a [wgpu::TextureFormat],
+    pub view_formats: &'a [TextureFormat],
 }
 
 impl Default for TextureCreationParams<'_> {
@@ -24,7 +24,7 @@ impl Default for TextureCreationParams<'_> {
             label: None,
             width: 0,
             height: 0,
-            format: *DEFAULT_TEXTURE_FORMAT.get().unwrap(),
+            format: *(DEFAULT_TEXTURE_FORMAT.get().unwrap()),
             mip_level_count: 1,
             filter_mode: wgpu::FilterMode::Linear,
             render_scale: 1.0,
@@ -66,12 +66,13 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
 
     pub fn create_depth_texture(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
         label: &str,
+        sample_count: u32
     ) -> Self {
         let size = wgpu::Extent3d {
             width: config.width,
@@ -83,11 +84,7 @@ impl Texture {
             label: Some(label),
             size,
             mip_level_count: 1,
-            sample_count: crate::config::game_config()
-                .lock()
-                .sample_count
-                .clone()
-                .into(),
+            sample_count: sample_count,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -174,7 +171,7 @@ impl Texture {
     pub fn create_scaled_mip_filter_surface_texture(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
-        format: wgpu::TextureFormat,
+        format: TextureFormat,
         render_scale: f32,
         mip_level_count: u32,
         filter_mode: wgpu::FilterMode,
@@ -233,10 +230,10 @@ impl Texture {
         is_normal_map: bool,
         address_mode: wgpu::AddressMode,
     ) -> ImageResult<Self> {
-        let format: wgpu::TextureFormat = if is_normal_map {
-            wgpu::TextureFormat::Rgba8UnormSrgb
+        let format: TextureFormat = if is_normal_map {
+            TextureFormat::Rgba8UnormSrgb
         } else {
-            wgpu::TextureFormat::Rgba8Unorm
+            TextureFormat::Rgba8Unorm
         };
         Self::from_image_with_format(device, queue, img, label, address_mode, format)
     }
@@ -247,7 +244,7 @@ impl Texture {
         img: &image::DynamicImage,
         label: Option<&str>,
         address_mode: wgpu::AddressMode,
-        format: wgpu::TextureFormat,
+        format: TextureFormat,
     ) -> ImageResult<Self> {
         let img = img.flipv();
         let rgba = img.to_rgba8();
@@ -271,7 +268,7 @@ impl Texture {
         img_data: &[u8],
         label: Option<&str>,
         address_mode: wgpu::AddressMode,
-        format: wgpu::TextureFormat,
+        format: TextureFormat,
         dimensions: (u32, u32),
         bytes_per_pixel: u32,
     ) -> ImageResult<Self> {

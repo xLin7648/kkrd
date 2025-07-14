@@ -112,9 +112,7 @@ pub struct WgpuRenderer {
     pub camera_buffer: Buffer,
     pub camera_bind_group: Arc<BindGroup>,
     pub camera_bind_group_layout: BindGroupLayout,
-    // msaa_texture: wgpu::TextureView,
-    pub msaa_texture: (TextureView, Option<TextureView>),
-    // main_camera: Option<Arc<Mutex<dyn camera::Camera>>>,
+    pub msaa_texture: (TextureView, Option<TextureView>)
 }
 
 impl WgpuRenderer {
@@ -237,10 +235,14 @@ impl WgpuRenderer {
             },
         );
 
+        let bind = get_run_time_context();
+        let run_time_context = bind.read();
+
         let depth_texture = texture::Texture::create_depth_texture(
             &context.device,
             &context.config.read(),
             "Depth Texture",
+            run_time_context.sample_count.into()
         );
 
         // let hdr_bind_group_layout = create_hdr_bind_group_layout(&context.device);
@@ -256,7 +258,7 @@ impl WgpuRenderer {
         let msaa_texture = create_multisampled_framebuffer(
             &context.device,
             &context.config.read(),
-            game_config().lock().sample_count.clone().into(),
+            run_time_context.sample_count.into(),
         );
 
         let renderer = Self {
@@ -288,20 +290,19 @@ impl WgpuRenderer {
 
             context,
 
-            msaa_texture,
+            msaa_texture
         };
 
         renderer
     }
 
     pub(crate) fn resize(&mut self, mut new_size: PhysicalSize<u32>) {
-        //, present_mode: PresentMode) {
         if new_size.width > 0 && new_size.height > 0 {
             new_size.width = new_size.width.max(1);
             new_size.height = new_size.height.max(1);
             self.size = new_size;
 
-            if let Some(main_camera) = &game_config().lock().main_camera {
+            if let Some(main_camera) = &get_run_time_context().read().main_camera {
                 main_camera.write().resize(new_size);
             }
 
@@ -315,7 +316,7 @@ impl WgpuRenderer {
                 surface.configure(&self.context.device, &config);
             }
 
-            self.update_resources();
+            self.update_resources(get_run_time_context().read().sample_count.into());
         }
     }
 
@@ -327,11 +328,11 @@ impl WgpuRenderer {
         }
     }
 
-    fn update_resources(&mut self) {
+    fn update_resources(&mut self, sample_count: u32) {
         self.msaa_texture = create_multisampled_framebuffer(
             &self.context.device,
             &self.context.config.read(),
-            game_config().lock().sample_count.clone().into(),
+            sample_count,
         );
     }
 
@@ -351,8 +352,6 @@ impl WgpuRenderer {
     }
 
     pub(crate) fn draw(&mut self) {
-        let clear_color = game_config().lock().clear_color;
-
         // 检查 surface 是否可用
         let output = {
             if let Some(surface) = &self.context.surface.as_mut() {
@@ -369,16 +368,24 @@ impl WgpuRenderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        let (sample_count, clear_color) = {
+            let bind = get_run_time_context();
+            let read = bind.read();
+
+            (read.sample_count, read.clear_color)
+        };
+
         run_batched_render_passes(
             self,
+            sample_count,
             clear_color,
             self.sprite_shader_id,
             self.error_shader_id,
-            &surface_view,
+            &surface_view
         );
 
         // 解析MSAA纹理到非MSAA的高精度纹理
-        if game_config().lock().sample_count != Msaa::Off {
+        if sample_count != Msaa::Off {
             let mut encoder =
                 self.context
                     .device
@@ -433,7 +440,7 @@ impl WgpuRenderer {
     }
 
     fn projection_matrix(&self) -> Mat4 {
-        if let Some(camera) = &game_config().lock().main_camera {
+        if let Some(camera) = &get_run_time_context().read().main_camera {
             camera.read().matrix()
         } else {
             self.pixel_perfect_projection_matrix()

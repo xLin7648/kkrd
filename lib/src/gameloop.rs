@@ -13,10 +13,10 @@ pub struct MyGame {
 
 impl MyGame {
     pub async fn line(&mut self) {
-        if let Some(cam) = get_camera() {
-            cam.write()
-                .set_rotation_angle(vec3(0., 0., time::get_time() * 20.0));
-        }
+        // if let Some(cam) = get_camera() {
+        //     cam.write()
+        //         .set_rotation_angle(vec3(0., 0., time::get_time() * 20.0));
+        // }
 
         // draw_sprite_ex(
         //     texture_id("Tap"),
@@ -34,7 +34,7 @@ impl MyGame {
             Vec2::ZERO,
             vec2(500., 500.),
             0.0,
-            Color::from_rgba(255, 0, 0, 255),
+            BLUE,
             0,
         );
     }
@@ -44,8 +44,9 @@ impl MyGame {
 impl GameLoop for MyGame {
     async fn start(&mut self) {
         clear_background(BLACK);
-        let main_camera: Camera2D =
-            Camera2D::new(BaseCamera::new(vec3(0.0, 0.0, -1.), 0.01, 10000.0), 540.0);
+
+        let base_camera = BaseCamera::new(vec3(0.0, -200.0, -1000.), 0.01, 10000.0);
+        let main_camera = Camera3D::new(base_camera, 60.0);
         set_camera(main_camera);
         self.r = 187.841705;
     }

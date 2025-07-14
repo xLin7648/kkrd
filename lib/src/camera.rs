@@ -99,7 +99,8 @@ impl Camera3D {
 impl Camera for Camera3D {
     fn matrix(&self) -> Mat4 {
         let base = &self.base;
-        let view = Mat4::look_at_rh(base.pos, base.target, Vec3::Y);
+        let up = base.rot * Vec3::Y;
+        let view = Mat4::look_at_rh(base.pos, base.target, up);
         let proj = Mat4::perspective_rh(self.fovy.to_radians(), self.aspect, base.near, base.far);
         proj * view
     }

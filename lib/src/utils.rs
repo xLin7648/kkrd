@@ -2,7 +2,7 @@ use crate::*;
 
 use anyhow::*;
 use image::DynamicImage;
-use wgpu::TextureFormat;
+use TextureFormat;
 
 pub const FRAG_SHADER_PREFIX: &str = include_str!("shaders/frag-shader-prefix.wgsl");
 
@@ -275,11 +275,12 @@ pub fn create_render_pipeline(
     label: &str,
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
-    color_format: wgpu::TextureFormat,
-    depth_format: Option<wgpu::TextureFormat>,
+    color_format: TextureFormat,
+    depth_format: Option<TextureFormat>,
     vertex_layouts: &[wgpu::VertexBufferLayout],
     shader: &Shader,
     blend_mode: BlendMode,
+    sample_count: u32
 ) -> Result<wgpu::RenderPipeline> {
     // let module = naga::front::wgsl::parse_str(&shader.source)?;
     //
@@ -378,7 +379,7 @@ pub fn create_render_pipeline(
         }),
 
         multisample: wgpu::MultisampleState {
-            count: game_config().lock().sample_count.clone().into(),
+            count: sample_count,
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
@@ -392,12 +393,13 @@ pub fn create_render_pipeline(
 pub fn create_render_pipeline_with_layout(
     name: &str,
     device: &wgpu::Device,
-    color_format: wgpu::TextureFormat,
+    color_format: TextureFormat,
     bind_group_layouts: &[&wgpu::BindGroupLayout],
     vertex_layouts: &[wgpu::VertexBufferLayout],
     shader: &Shader,
     blend_mode: BlendMode,
     enable_z_buffer: bool,
+    sample_count: u32
 ) -> Result<wgpu::RenderPipeline> {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(&format!("{} Pipeline Layout", name)),
@@ -418,6 +420,7 @@ pub fn create_render_pipeline_with_layout(
         vertex_layouts,
         shader,
         blend_mode,
+        sample_count
     )
 }
 
@@ -483,7 +486,7 @@ pub fn create_multisampled_framebuffer(
         mip_level_count: 1,
         sample_count,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Depth32Float, // 或 Depth24Plus
+        format: TextureFormat::Depth32Float, // 或 Depth24Plus
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
@@ -508,7 +511,7 @@ pub fn create_hdr_texture(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
+        format: TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         label: Some("HDR Texture"),
         view_formats: &[],

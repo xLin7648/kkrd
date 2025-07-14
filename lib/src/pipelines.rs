@@ -31,7 +31,7 @@ pub fn create_render_target(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
+        format: TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
@@ -104,11 +104,13 @@ fn gen_render_target() -> RenderTargetId {
 }
 
 pub fn ensure_pipeline_exists(
-    c: &mut WgpuRenderer,
+    context: &mut WgpuRenderer,
     pass_data: &MeshDrawData,
     sprite_shader_id: ShaderId,
+
+    sample_count: u32
 ) -> String {
-    let shaders = c.shaders.borrow();
+    let shaders = context.shaders.borrow();
 
     let maybe_shader_instance_id = pass_data.shader;
 
@@ -130,32 +132,34 @@ pub fn ensure_pipeline_exists(
         },
         pass_data.blend_mode,
         maybe_shader,
-        c.enable_z_buffer
+        context.enable_z_buffer
     );
 
     let mesh_pipeline = if let Some(shader) = maybe_shader {
-        RenderPipeline::User(c.user_pipelines.entry(name.clone()).or_insert_with(|| {
+        RenderPipeline::User(context.user_pipelines.entry(name.clone()).or_insert_with(|| {
             create_user_pipeline(
                 &name,
                 pass_data,
                 shader,
-                &c.context,
-                &c.texture_layout,
-                &c.camera_bind_group_layout,
-                c.enable_z_buffer,
+                &context.context,
+                &context.texture_layout,
+                &context.camera_bind_group_layout,
+                context.enable_z_buffer,
+                sample_count
             )
         }))
     } else {
-        RenderPipeline::Wgpu(c.pipelines.entry(name.clone()).or_insert_with(|| {
+        RenderPipeline::Wgpu(context.pipelines.entry(name.clone()).or_insert_with(|| {
             create_render_pipeline_with_layout(
                 &name,
-                &c.context.device,
+                &context.context.device,
                 *DEFAULT_TEXTURE_FORMAT.get().unwrap(),
-                &[&c.texture_layout, &c.camera_bind_group_layout],
+                &[&context.texture_layout, &context.camera_bind_group_layout],
                 &[SpriteVertex::desc()],
                 shaders.get(sprite_shader_id).unwrap(),
                 pass_data.blend_mode,
-                c.enable_z_buffer,
+                context.enable_z_buffer,
+                sample_count
             )
             .unwrap()
         }))
@@ -170,13 +174,13 @@ pub fn ensure_pipeline_exists(
                 if let Some(Uniform::F32(OrderedFloat(value))) =
                     shader_instance.uniforms.get(buffer_name)
                 {
-                    c.context
+                    context.context
                         .queue
                         .write_buffer(buffer, 0, bytemuck::cast_slice(&[*value]));
                 } else if let UniformDef::F32(Some(default_value)) =
                     shader.uniform_defs.get(buffer_name).unwrap()
                 {
-                    c.context.queue.write_buffer(
+                    context.context.queue.write_buffer(
                         buffer,
                         0,
                         bytemuck::cast_slice(&[*default_value]),
@@ -199,6 +203,7 @@ pub fn create_user_pipeline(
     texture_layout: &Arc<wgpu::BindGroupLayout>,
     camera_bind_group_layout: &wgpu::BindGroupLayout,
     enable_z_buffer: bool,
+    sample_count: u32
 ) -> UserRenderPipeline {
     info!("Creating pipeline for shader: {:?}", shader.id);
 
@@ -278,6 +283,7 @@ pub fn create_user_pipeline(
         shader,
         pass_data.blend_mode,
         enable_z_buffer,
+        sample_count
     )
     .unwrap();
 

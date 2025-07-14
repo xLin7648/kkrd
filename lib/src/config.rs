@@ -37,7 +37,7 @@ impl ResolutionConfig {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum Msaa {
     Off = 1,
     Sample2 = 2,
@@ -54,80 +54,78 @@ impl From<Msaa> for u32 {
 }
 
 #[derive(Debug)]
-pub struct GameConfig {
-    pub title_name: String,
+pub struct InitGameConfig {
     pub version: &'static str,
-    pub fullscreen: bool,
-    pub target_frame_rate: Option<u32>,
-    pub init_end: bool,
-
-    pub resolution: Option<Size>,
-    pub min_resolution: Option<Size>,
-
-    pub sample_count: Msaa,
-    pub power_preference: wgpu::PowerPreference,
-
-    pub clear_color: Color,
-
-    pub main_camera: Option<Arc<RwLock<dyn camera::Camera>>>,
+    pub window_config: WindowConfig,
 }
 
-impl Default for GameConfig {
+impl Default for InitGameConfig {
+    fn default() -> Self {
+        Self {
+            version: "New Version",
+            window_config: WindowConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WindowConfig {
+    pub title_name: String,
+    pub fullscreen: bool,
+    pub resolution: Size,
+    pub min_resolution: Option<Size>,
+}
+
+impl Default for WindowConfig {
     fn default() -> Self {
         Self {
             title_name: "New Game".to_owned(),
-            version: "New Version",
             fullscreen: false,
-            init_end: false,
-            target_frame_rate: Some(60),
-
-            resolution: Some(Size::Physical(PhysicalSize::new(1280, 720))),
+            resolution: Size::Physical(PhysicalSize::new(1280, 720)),
             min_resolution: Some(Size::Physical(PhysicalSize::new(1280, 720))),
+        }
+    }
+}
 
+pub struct RunTimeContext {
+    pub target_frame_rate: Option<u32>,
+    pub sample_count: Msaa,
+
+    pub clear_color: Color,
+    pub main_camera: Option<Arc<RwLock<dyn camera::Camera>>>,
+}
+
+impl Default for RunTimeContext {
+    fn default() -> Self {
+        Self { 
+            target_frame_rate: Some(120),
             sample_count: Msaa::default(),
-            power_preference: wgpu::PowerPreference::default(),
-
-            clear_color: BLUE,
-
+            clear_color: BLACK,
             main_camera: None,
         }
     }
 }
 
-static GAME_CONFIG: OnceCell<Arc<Mutex<GameConfig>>> = OnceCell::new();
+pub static RUN_TIME_CONTEXT: OnceLock<Arc<RwLock<RunTimeContext>>> = OnceLock::new();
 
-pub(crate) fn init_game_config(
-    title_name: String,
-    version: &'static str,
-    config_fn: fn(GameConfig) -> GameConfig,
-) {
-    GAME_CONFIG
-        .set(Arc::new(Mutex::new(config_fn(GameConfig {
-            title_name,
-            version,
-            ..Default::default()
-        }))))
-        .expect("init_window_config() should only be called once");
-}
-
-pub(crate) fn game_config() -> Arc<Mutex<GameConfig>> {
-    GAME_CONFIG
+pub fn get_run_time_context() -> Arc<RwLock<RunTimeContext>> {
+    RUN_TIME_CONTEXT
         .get()
-        .expect("window_config() must be called after comfy main runs")
+        .unwrap()
         .clone()
 }
 
 pub fn clear_background(color: Color) {
-    game_config().lock().clear_color = color;
+    get_run_time_context().write().clear_color = color;
 }
 
 pub fn set_camera<T: Camera + Send + Sync + 'static>(mut camera: T) {
     camera.resize(get_window_size());
-    game_config().lock().main_camera = Some(Arc::new(RwLock::new(camera)));
+    get_run_time_context().write().main_camera = Some(Arc::new(RwLock::new(camera)));
 }
 
 pub fn get_camera() -> Option<Arc<RwLock<dyn Camera>>> {
-    if let Some(cam) = &game_config().lock().main_camera {
+    if let Some(cam) = &get_run_time_context().read().main_camera {
         Some(Arc::clone(&cam))
     } else {
         None
@@ -135,9 +133,9 @@ pub fn get_camera() -> Option<Arc<RwLock<dyn Camera>>> {
 }
 
 pub fn set_default_camera() {
-    game_config().lock().main_camera = None;
+    get_run_time_context().write().main_camera = None;
 }
 
 pub fn set_target_frame_rate(target_frame_rate: u32) {
-    game_config().lock().target_frame_rate = Some(target_frame_rate);
+    get_run_time_context().write().target_frame_rate = Some(target_frame_rate);
 }

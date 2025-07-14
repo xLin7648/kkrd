@@ -4,20 +4,8 @@ use crate::*;
 
 pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
     let size = window.inner_size();
-    let binding = game_config();
-    let window_config = binding.lock();
 
-    let default_backends = if cfg!(all(
-        feature = "webgl",
-        target_arch = "wasm32",
-        not(feature = "webgpu")
-    )) {
-        Backends::GL
-    } else if cfg!(all(feature = "webgpu", target_arch = "wasm32")) {
-        Backends::BROWSER_WEBGPU
-    } else {
-        Backends::all()
-    };
+    let default_backends = Backends::all();
 
     let instance = Instance::new(&InstanceDescriptor {
         backends: default_backends,
@@ -32,7 +20,7 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
 
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: window_config.power_preference,
+            power_preference: PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         })
@@ -66,7 +54,7 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
 
     let caps = surface.get_capabilities(&adapter);
 
-    error!("Supported formats: {:?}", caps.formats);
+    info!("Supported formats: {:?}", caps.formats);
 
     let formats = caps.formats;
     // For future HDR output support, we'll need to request a format that supports HDR,
@@ -83,18 +71,24 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
         }
     }
 
-    error!("Supported format: {:?}", format);
+    info!("Supported format: {:?}", format);
 
     let _ = DEFAULT_TEXTURE_FORMAT.set(format);
 
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let present_mode = PresentMode::Mailbox;
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    let present_mode = PresentMode::Immediate;
+
     let config = wgpu::SurfaceConfiguration {
-        usage: TextureUsages::RENDER_ATTACHMENT,
-        format: format,
+        format,
+        present_mode,
         width: size.width.max(1),
         height: size.height.max(1),
-        present_mode: PresentMode::Fifo,
         alpha_mode: caps.alpha_modes[0],
         desired_maximum_frame_latency: 2,
+        usage: TextureUsages::RENDER_ATTACHMENT,
         view_formats: if !format.is_srgb() {
             vec![format.add_srgb_suffix()]
         } else {
