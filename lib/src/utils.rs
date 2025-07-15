@@ -2,6 +2,7 @@ use crate::*;
 
 use anyhow::*;
 use image::DynamicImage;
+use wgpu::FrontFace;
 use TextureFormat;
 
 pub const FRAG_SHADER_PREFIX: &str = include_str!("shaders/frag-shader-prefix.wgsl");
@@ -366,6 +367,7 @@ pub fn create_render_pipeline(
 
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
+            front_face: FrontFace::Cw, // 顺时针三角形为正面
             cull_mode: Some(wgpu::Face::Back),
             ..Default::default()
         },
@@ -373,7 +375,7 @@ pub fn create_render_pipeline(
         depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
             format,
             depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
@@ -558,7 +560,7 @@ pub fn create_tonemapping_pipeline(
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
+            front_face: wgpu::FrontFace::Cw,
             cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
             unclipped_depth: false,

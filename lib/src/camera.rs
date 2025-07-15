@@ -68,7 +68,7 @@ impl BaseCamera {
 
     // 更新目标位置
     fn update_target(&mut self) {
-        let direction = self.rot * Vec3::Z; // 使用四元数旋转方向，这里假设 Z 轴是前方方向
+        let direction = self.rot * Vec3::Z;
         self.target = self.pos + direction;
     }
 }
@@ -100,8 +100,9 @@ impl Camera for Camera3D {
     fn matrix(&self) -> Mat4 {
         let base = &self.base;
         let up = base.rot * Vec3::Y;
-        let view = Mat4::look_at_rh(base.pos, base.target, up);
-        let proj = Mat4::perspective_rh(self.fovy.to_radians(), self.aspect, base.near, base.far);
+        // 保持右手坐标系函数
+        let view = Mat4::look_at_lh(base.pos, base.target, up);
+        let proj = Mat4::perspective_lh(self.fovy.to_radians(), self.aspect, base.near, base.far);
         proj * view
     }
 
@@ -174,14 +175,15 @@ impl Camera for Camera2D {
     fn matrix(&self) -> Mat4 {
         let base = &self.base;
         let up = base.rot * Vec3::Y;
-        let view = Mat4::look_at_rh(base.pos, base.target, up);
-        let proj = Mat4::orthographic_rh(
-            self.rect.x,                // 左边界
-            self.rect.x + self.rect.w,  // 右边界
-            self.rect.y - self.rect.h,  // 下边界
-            self.rect.y,                // 上边界
-            base.near,                  // 近裁剪
-            base.far                    // 远裁剪
+        // 保持右手坐标系函数
+        let view = Mat4::look_at_lh(base.pos, base.target, up);
+        let proj = Mat4::orthographic_lh(
+            self.rect.x,
+            self.rect.x + self.rect.w,
+            self.rect.y - self.rect.h,
+            self.rect.y,
+            base.near,
+            base.far
         );
         proj * view
     }
