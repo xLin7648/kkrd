@@ -1,4 +1,4 @@
-use wgpu::{TextureFormat, TextureUsages};
+use wgpu::{Features, Limits, RequestAdapterOptions, SamplerBindingType, TextureSampleType, TextureUsages, TextureViewDimension};
 
 use crate::*;
 
@@ -19,7 +19,7 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
     trace!("Requesting adapter");
 
     let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
+        .request_adapter(&RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
@@ -31,9 +31,9 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
 
     trace!("Requesting device");
 
-    let limits = wgpu::Limits {
+    let limits = Limits {
         max_texture_dimension_2d: 4096,
-        ..wgpu::Limits::downlevel_defaults()
+        ..Limits::downlevel_defaults()
     };
 
     // TODO: adapter.features();
@@ -42,7 +42,7 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
         .request_device(
             &DeviceDescriptor {
                 label: None,
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                 required_limits: limits,
 
                 ..Default::default()
@@ -81,7 +81,7 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     let present_mode = PresentMode::Immediate;
 
-    let config = wgpu::SurfaceConfiguration {
+    let config = SurfaceConfiguration {
         format,
         present_mode,
         width: size.width.max(1),
@@ -101,22 +101,22 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
     surface.configure(&device, &config);
 
     let texture_bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             entries: &[
-                wgpu::BindGroupLayoutEntry {
+                BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
                         multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
+                BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
             ],

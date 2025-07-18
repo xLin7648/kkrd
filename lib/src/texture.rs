@@ -84,7 +84,7 @@ impl Texture {
             label: Some(label),
             size,
             mip_level_count: 1,
-            sample_count: sample_count,
+            sample_count,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -225,15 +225,16 @@ impl Texture {
     pub fn from_image_ex(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        img: &image::DynamicImage,
+        img: &DynamicImage,
         label: Option<&str>,
         is_normal_map: bool,
         address_mode: wgpu::AddressMode,
     ) -> ImageResult<Self> {
         let format: TextureFormat = if is_normal_map {
-            TextureFormat::Rgba8UnormSrgb
-        } else {
+            // 法线贴图避免伽马矫正
             TextureFormat::Rgba8Unorm
+        } else {
+            TextureFormat::Rgba8UnormSrgb
         };
         Self::from_image_with_format(device, queue, img, label, address_mode, format)
     }

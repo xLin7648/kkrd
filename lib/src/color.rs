@@ -3,7 +3,7 @@ use crate::*;
 /// Color types and helpers.
 /// A color represented by 4 floats: red, green, blue and alpha.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     /// Red channel value from 0.0 to 1.0
     pub r: f32,
@@ -13,6 +13,12 @@ pub struct Color {
     pub b: f32,
     /// Alpha channel value from 0.0 to 1.0
     pub a: f32,
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        WHITE
+    }
 }
 
 /// Build a color from 4 components of 0..255 values

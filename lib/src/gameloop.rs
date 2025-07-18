@@ -30,23 +30,27 @@ impl MyGame {
         //     },
         // );
 
-        draw_rect_rot(
-            0., 0.,
-            500., 500.,
-            Rotation::Z(0.),
-            vec2(0.5, 0.5),
-            BLUE,
-            0,
+        draw_sprite_ex(
+            texture_id("Tap"),
+            DrawTextureParams {
+                raw_draw_params: RawDrawParams {
+                    scale: Some(vec2(0.2, 0.2)),
+                    rotation: Default::default(),
+                    pivot: None,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
         );
 
-        draw_rect_rot(
-            0., 0.,
-            5., 1080.,
-            Rotation::Z(0.),
-            vec2(0.0, 0.5),
-            WHITE,
-            0,
-        );
+        // draw_rect_rot(
+        //     0., 0.,
+        //     5., 1080.,
+        //     Rotation::Euler(0., 0., 0.),
+        //     vec2(0.5, 0.5),
+        //     WHITE,
+        //     0,
+        // );
 
         let abs_difference = (time::get_time().sin() - 1.0).abs();
         self.r = abs_difference * 100.0;
@@ -58,8 +62,8 @@ impl GameLoop for MyGame {
     async fn start(&mut self) {
         clear_background(BLACK);
 
-        let base_camera = BaseCamera::new(vec3(0.0, 0.0, -1000.), 0.01, 10000.0);
-        let main_camera = Camera3D::new(base_camera, 60.0);
+        let base_camera = BaseCamera::new(vec3(0.0, 0.0, -100.), 0.01, 10000.0);
+        let main_camera = Camera2D::new(base_camera, 540.0);
         set_camera(main_camera);
     }
 

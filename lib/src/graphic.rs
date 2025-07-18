@@ -238,7 +238,7 @@ impl WgpuRenderer {
         let bind = get_run_time_context();
         let run_time_context = bind.read();
 
-        let depth_texture = texture::Texture::create_depth_texture(
+        let depth_texture = Texture::create_depth_texture(
             &context.device,
             &context.config.read(),
             "Depth Texture",
@@ -277,7 +277,7 @@ impl WgpuRenderer {
 
             vertex_buffer,
             index_buffer,
-            enable_z_buffer: false,
+            enable_z_buffer: true,
 
             sprite_shader_id,
             error_shader_id,
@@ -334,6 +334,13 @@ impl WgpuRenderer {
             &self.context.config.read(),
             sample_count,
         );
+
+        self.depth_texture = Arc::new(Texture::create_depth_texture(
+            &self.context.device,
+            &self.context.config.read(),
+            "Depth Texture",
+            sample_count
+        ));
     }
 
     pub(crate) fn update(&mut self) {

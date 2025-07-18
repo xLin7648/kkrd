@@ -175,7 +175,7 @@ impl Camera for Camera2D {
     fn matrix(&self) -> Mat4 {
         let base = &self.base;
         let up = base.rot * Vec3::Y;
-        // 保持右手坐标系函数
+        // 保持左手坐标系函数
         let view = Mat4::look_at_lh(base.pos, base.target, up);
         let proj = Mat4::orthographic_lh(
             self.rect.x,
@@ -197,7 +197,11 @@ impl Camera for Camera2D {
         self.rect.w = self.size * aspect_ratio;
         self.rect.h = self.size;
         self.rect.x = -self.rect.w / 2.0;
-        self.rect.y = self.rect.h / 2.0;
+        self.rect.y =  self.rect.h / 2.0;
+    }
+
+    fn set_position(&mut self, position: Vec3) {
+        self.base.set_position(position);
     }
 
     fn set_rotation(&mut self, rotation: Quat) { // 修改为 Quat 类型
@@ -206,10 +210,6 @@ impl Camera for Camera2D {
 
     fn set_rotation_angle(&mut self, angle: Vec3) {
         self.base.set_rotation_angle(angle); // 调用 BaseCamera 的方法
-    }
-    
-    fn set_position(&mut self, position: Vec3) {
-        self.base.set_position(position);
     }
 
     fn world_to_screen(&self, world_position: Vec3) -> Vec2 {

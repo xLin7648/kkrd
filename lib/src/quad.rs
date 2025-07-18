@@ -143,39 +143,11 @@ pub fn draw_line_tex(
     })
 }
 
-pub fn draw_rect_rot(x: f32, y: f32, w: f32, h: f32, rotation: Rotation, pivot: Vec2, color: Color, z_index: i32) {
-    draw_quad(
-        vec2(x, y),
-        vec2(w, h),
-        rotation,
-        pivot,
-        color,
-        z_index,
-        texture_id("1px"),
-        Vec2::ZERO,
-    );
-}
-
-pub fn draw_quad(
-    position: Vec2,
-    size: Vec2,
-    rotation: Rotation,
-    pivot: Vec2,
-    color: Color,
-    z_index: i32,
-    texture: TextureHandle,
-    scroll_offset: Vec2,
-) {
+pub fn draw_quad(raw_draw_params: RawDrawParams) {
     draw_sprite_ex(
-        texture,
-        position,
-        color,
-        z_index,
+        texture_id("1px"),
         DrawTextureParams {
-            dest_size: Some(size),
-            scroll_offset,
-            rotation,
-            pivot: Some(pivot),
+            raw_draw_params,
             ..Default::default()
         },
     );
@@ -183,103 +155,77 @@ pub fn draw_quad(
 
 pub fn draw_sprite_ex(
     texture: TextureHandle,
-    position: Vec2,
-    tint: Color,
-    z_index: i32,
     params: DrawTextureParams,
 ) {
-    let raw = RawDrawParams {
-        dest_size: params.dest_size.map(|s| s),
-        source_rect: params.source_rect,
-        rotation: params.rotation,
-        flip_x: params.flip_x,
-        flip_y: params.flip_y,
-        pivot: params.pivot,
-    };
-
-    // if !CAMERA_BOUNDS
-    //     .load()
-    //     .contains_rect(position, raw.dest_size.unwrap_or(Vec2::ONE))
-    // {
-    //     return;
-    // }
-
-    let size = match Assets::image_size(texture) {
-        ImageSizeResult::Loaded(size) => size,
-        ImageSizeResult::LoadingInProgress => {
-            return;
-        }
-        ImageSizeResult::ImageNotFound => {
-            error!("NO SIZE FOR TEXTURE {:?}", texture);
-            UVec2::ONE
-        }
-    };
+    let mut params = params.clone();
+    if params.raw_draw_params.dest_size.is_none() {
+        params.raw_draw_params.dest_size = Some(match Assets::image_size(texture) {
+            ImageSizeResult::Loaded(size) => size,
+            ImageSizeResult::LoadingInProgress => {
+                return;
+            }
+            ImageSizeResult::ImageNotFound => {
+                error!("NO SIZE FOR TEXTURE {:?}", texture);
+                UVec2::ONE
+            }
+        });
+    }
 
     let vertices = rotated_rectangle(
-        position.extend(z_index as f32 / Z_DIV),
-        raw,
-        size.x as f32,
-        size.y as f32,
-        tint,
         params.scroll_offset,
+        &params.raw_draw_params,
     );
 
     const QUAD_INDICES_U32: &[u32] = &[0, 1, 2, 0, 2, 3];
 
     let mesh = Mesh {
-        origin: position.extend(z_index as f32),
+        origin: params.raw_draw_params.position,
         vertices: SmallVec::from_slice(&vertices),
         indices: QUAD_INDICES_U32.into(),
-        z_index,
+        z_index: params.raw_draw_params.z_index,
         texture: Some(texture),
         y_sort_offset: params.y_sort_offset,
     };
 
-    draw_mesh_ex(mesh, params.blend_mode);
+    draw_mesh_ex(mesh, params.raw_draw_params.blend_mode);
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct RawDrawParams {
-    pub dest_size: Option<Vec2>,
-    pub source_rect: Option<IRect>,
+    pub position: Vec3,
     pub rotation: Rotation,
+    pub dest_size: Option<UVec2>,
+    pub scale: Option<Vec2>,
+    pub z_index: i32,
+
+    pub pivot: Option<Vec2>,
+    pub color: Color,
     pub flip_x: bool,
     pub flip_y: bool,
-    pub pivot: Option<Vec2>,
+    pub blend_mode: BlendMode,
 }
 
 #[derive(Clone, Debug)]
 pub struct DrawTextureParams {
-    pub dest_size: Option<Vec2>,
-    pub source_rect: Option<IRect>,
     pub scroll_offset: Vec2,
-    pub rotation: Rotation,
-    pub flip_x: bool,
-    pub flip_y: bool,
-    pub pivot: Option<Vec2>,
-    pub blend_mode: BlendMode,
     pub y_sort_offset: f32,
+    pub raw_draw_params: RawDrawParams
 }
 
 impl Default for DrawTextureParams {
     fn default() -> DrawTextureParams {
         DrawTextureParams {
-            dest_size: None,
-            source_rect: None,
             scroll_offset: Vec2::ZERO,
-            rotation: Rotation::default(),
-            pivot: None,
-            flip_x: false,
-            flip_y: false,
-            blend_mode: BlendMode::None,
+
             y_sort_offset: 0.0,
+            raw_draw_params: RawDrawParams::default(),
         }
     }
 }
 
-impl DrawTextureParams {
-    pub fn blend(blend_mode: BlendMode) -> DrawTextureParams {
-        DrawTextureParams {
+impl RawDrawParams {
+    pub fn blend(blend_mode: BlendMode) -> RawDrawParams {
+        RawDrawParams {
             blend_mode,
             ..Default::default()
         }
@@ -291,111 +237,133 @@ pub enum Rotation {
     X(f32),
     Y(f32),
     Z(f32),
-    Euler(Vec3)
+    Euler(f32, f32, f32),
+    Quaternion(f32, f32, f32, f32),
+    Zero
 }
 
 impl Default for Rotation {
     fn default() -> Self {
-        Rotation::Z(0f32)
+        Rotation::Zero
     }
 }
 
 pub fn rotated_rectangle(
-    position: Vec3,
-    params: RawDrawParams,
-    tex_width: f32,
-    tex_height: f32,
-    color: Color,
     scroll_offset: Vec2,
+    params: &RawDrawParams,
 ) -> [SpriteVertex; 4] {
-    // 获取源矩形尺寸
-    let dims = params
-        .source_rect
-        .map(|rect| IRect {
-            size: rect.size,
-            offset: ivec2(rect.offset.x, rect.offset.y),
-        })
-        .unwrap_or(IRect::new(
-            ivec2(0, 0),
-            ivec2(tex_width as i32, tex_height as i32),
-        ));
-
-    let sx = dims.offset.x as f32;
-    let sy = dims.offset.y as f32;
-    let sw = dims.size.x as f32;
-    let sh = dims.size.y as f32;
-
     // 处理目标尺寸和翻转
-    let (mut w, mut h) = {
-        let size = params.dest_size.unwrap_or((1.0, 1.0).into());
-        (size.x, size.y)
+    let (mut scale_w, mut scale_h) = {
+        let scale = params.scale.unwrap_or(Vec2::ONE);
+        let wh = params.dest_size.unwrap_or(UVec2::ONE);
+        (wh.x as f32 * scale.x, wh.y as f32 * scale.y)
     };
-    if params.flip_x { w = -w; }
-    if params.flip_y { h = -h; }
+    if params.flip_x { scale_w = -scale_w; }
+    if params.flip_y { scale_h = -scale_h; }
 
     // 计算实际尺寸（考虑翻转）
-    let abs_w = w.abs();
-    let abs_h = h.abs();
-    
+    let abs_w = scale_w.abs();
+    let abs_h = scale_h.abs();
+
     // 计算 pivot 偏移（Unity 风格，0-1 范围）
     let pivot_offset = match params.pivot {
-        Some(p) => vec2(p.x * abs_w, p.y * abs_h),
-        None => vec2(abs_w / 2.0, abs_h / 2.0),
+        Some(p) => vec3(p.x * abs_w, p.y * abs_h, 0.0),
+        None => vec3(abs_w / 2.0, abs_h / 2.0, 0.0),
     };
 
-    // 获取旋转角度（只使用Z轴旋转）
-    let r = match params.rotation {
-        Rotation::Z(angle) => angle,
-        Rotation::Euler(v) => v.z,
-        _ => 0.0,
+    // 获取旋转角度（支持XYZ三轴）
+    let mut rotation_angles = match params.rotation {
+        Rotation::Zero => Vec3::ZERO,
+        Rotation::X(angle) => vec3(angle, 0.0, 0.0),
+        Rotation::Y(angle) => vec3(0.0, angle, 0.0),
+        Rotation::Z(angle) => vec3(0.0, 0.0, angle),
+        Rotation::Euler(x, y, z) => vec3(x, y, z),
+        Rotation::Quaternion(x, y, z, w) => {
+            quat(x, y , z, w).to_euler(EulerRot::XYZ).into()
+        }
     };
 
-    // 计算旋转矩阵（左手坐标系）
-    let (sin, cos) = r.sin_cos();
-    let rotation_matrix = Mat2::from_cols(
-        vec2(cos, sin),
-        vec2(-sin, cos)
-    );
+    rotation_angles.x = rotation_angles.x.to_radians();
+    rotation_angles.y = rotation_angles.y.to_radians();
+    rotation_angles.z = rotation_angles.z.to_radians();
 
-    // 定义基础顶点（相对于矩形左上角）
+    // 创建3x3旋转矩阵（左手坐标系，ZXY旋转顺序）
+    let rotation_matrix = {
+        let (sx, cx) = rotation_angles.x.sin_cos();
+        let (sy, cy) = rotation_angles.y.sin_cos();
+        let (sz, cz) = rotation_angles.z.sin_cos();
+
+        // 绕X轴旋转矩阵（pitch）
+        let rot_x = Mat3::from_cols(
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, cx, sx),
+            Vec3::new(0.0, -sx, cx)
+        );
+
+        // 绕Y轴旋转矩阵（yaw）
+        let rot_y = Mat3::from_cols(
+            Vec3::new(cy, 0.0, -sy),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(sy, 0.0, cy)
+        );
+
+        // 绕Z轴旋转矩阵（roll）
+        let rot_z = Mat3::from_cols(
+            Vec3::new(cz, sz, 0.0),
+            Vec3::new(-sz, cz, 0.0),
+            Vec3::new(0.0, 0.0, 1.0)
+        );
+
+        // 组合旋转：先Z，再X，最后Y (ZXY顺序)
+        rot_y * rot_x * rot_z
+    };
+
+    // 定义基础顶点（3D空间）
     let base_vertices = [
-        vec2(0.0, 0.0),      // 左上
-        vec2(0.0, h),        // 左下
-        vec2(w, h),          // 右下
-        vec2(w, 0.0),        // 右上
+        vec3(0.0, 0.0, 0.0),      // 左上
+        vec3(0.0, scale_h, 0.0),        // 左下
+        vec3(scale_w, scale_h, 0.0),          // 右下
+        vec3(scale_w, 0.0, 0.0),        // 右上
     ];
 
     // 应用旋转和平移
-    let world_vertices: [Vec2; 4] = base_vertices.map(|v| {
+    let world_vertices: [Vec3; 4] = base_vertices.map(|v| {
         // 转换为 pivot 相对坐标
         let pivot_relative = v - pivot_offset;
-        // 应用旋转
+        // 应用3D旋转
         let rotated = rotation_matrix * pivot_relative;
-        // 转换回世界坐标
-        rotated + position.truncate() + pivot_offset
+        // 转换回世界坐标（包含Z轴）
+        rotated + params.position
     });
+
+    let tex_coords: [Vec2; 4] = [
+        scroll_offset,
+        scroll_offset + vec2(0.0, 1.0),
+        scroll_offset + vec2(1.0, 1.0),
+        scroll_offset + vec2(1.0, 0.0)
+    ];
 
     // 创建最终顶点
     [
         SpriteVertex::new(
-            vec3(world_vertices[0].x, world_vertices[0].y, position.z),
-            vec2(sx / tex_width, sy / tex_height) + scroll_offset,
-            color,
+            world_vertices[0],
+            tex_coords[0],
+            params.color,
         ),
         SpriteVertex::new(
-            vec3(world_vertices[1].x, world_vertices[1].y, position.z),
-            vec2(sx / tex_width, (sy + sh) / tex_height) + scroll_offset,
-            color,
+            world_vertices[1],
+            tex_coords[1],
+            params.color,
         ),
         SpriteVertex::new(
-            vec3(world_vertices[2].x, world_vertices[2].y, position.z),
-            vec2((sx + sw) / tex_width, (sy + sh) / tex_height) + scroll_offset,
-            color,
+            world_vertices[2],
+            tex_coords[2],
+            params.color,
         ),
         SpriteVertex::new(
-            vec3(world_vertices[3].x, world_vertices[3].y, position.z),
-            vec2((sx + sw) / tex_width, sy / tex_height) + scroll_offset,
-            color,
+            world_vertices[3],
+            tex_coords[3],
+            params.color,
         ),
     ]
 }
