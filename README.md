@@ -5,8 +5,13 @@
 * [x] 合批
 * [x] Shader、图像导入
 
-* [ ] HDR
 * [ ] Bloom
 * [ ] Post-processing
-* [ ] Android IOS Support
+
 * [ ] Audio
+
+* [x] Windows Support 
+* [x] Android Support 
+* [x] MacOS   Support
+* [ ] IOS     Support
+* [ ] Linux   Support
