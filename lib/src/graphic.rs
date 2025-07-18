@@ -101,8 +101,10 @@ pub struct WgpuRenderer {
 
     pub textures: Arc<Mutex<TextureMap>>,
     pub texture_layout: Arc<BindGroupLayout>,
-    pub depth_texture: Arc<texture::Texture>,
+    pub depth_texture: Arc<Texture>,
     pub first_pass_texture: BindableTexture,
+
+    pub post_processing_effects: RefCell<Vec<PostProcessingEffect>>,
 
     pub sprite_shader_id: ShaderId,
     pub error_shader_id: ShaderId,
@@ -283,6 +285,8 @@ impl WgpuRenderer {
             error_shader_id,
 
             first_pass_texture,
+
+            post_processing_effects: RefCell::new(Vec::new()),
 
             depth_texture: Arc::new(depth_texture),
             textures: context.textures.clone(),

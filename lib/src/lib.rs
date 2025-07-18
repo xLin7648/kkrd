@@ -20,6 +20,8 @@ mod time;
 mod utils;
 mod y_sort;
 
+mod post_processing;
+
 // 其他可能导入的模块
 use app_events::*;
 use assets::*;
@@ -42,6 +44,7 @@ use texture::*;
 use time::*;
 use utils::*;
 use y_sort::*;
+use post_processing::*;
 
 // 外部依赖库的导入
 use glam::*;
