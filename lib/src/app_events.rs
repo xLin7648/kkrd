@@ -1,4 +1,5 @@
 use crate::*;
+use parking_lot::lock_api::Mutex;
 use pollster::FutureExt;
 use winit::platform::windows::{BackdropType, WindowAttributesExtWindows};
 
@@ -6,9 +7,7 @@ use winit::platform::windows::{BackdropType, WindowAttributesExtWindows};
 struct App {
     pub runtime: Option<Box<Runtime>>,
     pub window: Option<Arc<Window>>,
-    pub wr: Option<WgpuRenderer>,
-
-    pub init_game_config: InitGameConfig
+    pub init_game_config: InitGameConfig,
 }
 
 pub fn init_game(
@@ -146,11 +145,8 @@ impl App {
             .with_title(wc.title_name.clone())
             .with_inner_size(wc.resolution)
             .with_min_inner_size(
-                wc.min_resolution.unwrap_or(
-                    Size::Physical(
-                        PhysicalSize::new(1, 1)
-                    )
-                )
+                wc.min_resolution
+                    .unwrap_or(Size::Physical(PhysicalSize::new(1, 1))),
             )
             .with_fullscreen(if wc.fullscreen {
                 Some(Fullscreen::Borderless(None))
@@ -183,7 +179,8 @@ impl App {
     }
 
     pub fn renderer_update(&mut self) {
-        if let Some(wr) = &mut self.wr {
+        if let Some(wr) = get_global_wgpu() {
+            let mut wr = wr.lock();
             wr.update();
             wr.draw();
             wr.end_frame();
@@ -197,9 +194,11 @@ impl ApplicationHandler<WinitMessage> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WinitMessage) {
         match event {
             WinitMessage::CheckInit(tx) => {
-                if let Err(_) = tx.send(self.window.is_some() && self.wr.is_some()) {
+                if let Err(_) = tx.send(self.window.is_some() && get_global_wgpu().is_some()) {
                     warn!("Failed to send check init");
                 }
+
+                info!("{}", get_global_wgpu().is_some());
             }
             WinitMessage::RenderFrame(completion_tx) => {
                 self.renderer_update();
@@ -216,15 +215,16 @@ impl ApplicationHandler<WinitMessage> for App {
     // 当应用程序从挂起状态恢复时调用此方法
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(window) = &self.window {
-            if let Some(wr) = &mut self.wr {
-                wr.context.resume(window.clone());
-
+            if let Some(wr) = get_global_wgpu() {
+                wr.lock().context.resume(window.clone());
                 info!("Resumed");
             }
         } else {
             // 从桌面回来不会执行
             self.init_window(event_loop);
-            self.wr = Some(WgpuRenderer::new(self.window.clone().unwrap()).block_on());
+            let _ = WGPU_RENDERER.set(Arc::new(Mutex::new(
+                WgpuRenderer::new(self.window.clone().unwrap()).block_on(),
+            )));
         }
     }
 
@@ -237,8 +237,8 @@ impl ApplicationHandler<WinitMessage> for App {
     ) {
         match event {
             WindowEvent::Resized(new_size) => {
-                if let Some(wr) = &mut self.wr {
-                    wr.resize(new_size);
+                if let Some(wr) = get_global_wgpu() {
+                    wr.lock().resize(new_size);
                 }
             }
             WindowEvent::CloseRequested => {
@@ -252,8 +252,8 @@ impl ApplicationHandler<WinitMessage> for App {
 
     // 当应用程序被挂起时调用
     fn suspended(&mut self, _: &ActiveEventLoop) {
-        if let Some(wr) = self.wr.as_mut() {
-            wr.context.surface = None;
+        if let Some(wr) = get_global_wgpu() {
+            wr.lock().context.surface = None;
         }
 
         info!("Suspended");

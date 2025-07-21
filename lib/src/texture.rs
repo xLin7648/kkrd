@@ -1,7 +1,27 @@
 use image::DynamicImage;
 use image::GenericImageView;
 use image::ImageResult;
+use wgpu::AddressMode;
+use wgpu::BindGroup;
+use wgpu::BindGroupLayout;
+use wgpu::CompareFunction;
+use wgpu::Device;
+use wgpu::Extent3d;
+use wgpu::FilterMode;
+use wgpu::ImageCopyTexture;
+use wgpu::ImageDataLayout;
+use wgpu::Origin3d;
+use wgpu::Queue;
+use wgpu::Sampler;
+use wgpu::SamplerDescriptor;
+use wgpu::SurfaceConfiguration;
+use wgpu::TextureAspect;
+use wgpu::TextureDescriptor;
+use wgpu::TextureDimension;
 use wgpu::TextureFormat;
+use wgpu::TextureUsages;
+use wgpu::TextureView;
+use wgpu::TextureViewDescriptor;
 
 use crate::DEFAULT_TEXTURE_FORMAT;
 use crate::utils::DeviceExtensions;
@@ -13,7 +33,7 @@ pub struct TextureCreationParams<'a> {
     pub height: u32,
     pub format: TextureFormat,
     pub mip_level_count: u32,
-    pub filter_mode: wgpu::FilterMode,
+    pub filter_mode: FilterMode,
     pub render_scale: f32,
     pub view_formats: &'a [TextureFormat],
 }
@@ -26,7 +46,7 @@ impl Default for TextureCreationParams<'_> {
             height: 0,
             format: *(DEFAULT_TEXTURE_FORMAT.get().unwrap()),
             mip_level_count: 1,
-            filter_mode: wgpu::FilterMode::Linear,
+            filter_mode: FilterMode::Linear,
             render_scale: 1.0,
             view_formats: &[],
         }
@@ -36,13 +56,13 @@ impl Default for TextureCreationParams<'_> {
 #[derive(Debug)]
 pub struct BindableTexture {
     pub texture: Texture,
-    pub bind_group: wgpu::BindGroup,
+    pub bind_group: BindGroup,
 }
 
 impl BindableTexture {
     pub fn new(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
+        device: &Device,
+        layout: &BindGroupLayout,
         params: &TextureCreationParams,
     ) -> Self {
         let texture = Texture::create_with_params(device, params);
@@ -61,47 +81,47 @@ impl BindableTexture {
 #[derive(Debug)]
 pub struct Texture {
     pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
+    pub view: TextureView,
+    pub sampler: Sampler,
 }
 
 impl Texture {
     pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
 
     pub fn create_depth_texture(
-        device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
+        device: &Device,
+        config: &SurfaceConfiguration,
         label: &str,
         sample_count: u32
     ) -> Self {
-        let size = wgpu::Extent3d {
+        let size = Extent3d {
             width: config.width,
             height: config.height,
             depth_or_array_layers: 1,
         };
 
-        let desc = wgpu::TextureDescriptor {
+        let desc = TextureDescriptor {
             label: Some(label),
             size,
             mip_level_count: 1,
             sample_count,
-            dimension: wgpu::TextureDimension::D2,
+            dimension: TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
 
         let texture = device.create_texture(&desc);
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Nearest,
+            compare: Some(CompareFunction::LessEqual),
             lod_min_clamp: 0.0,
             lod_max_clamp: 100.0,
             ..Default::default()
@@ -114,29 +134,29 @@ impl Texture {
         }
     }
 
-    pub fn create_with_params(device: &wgpu::Device, params: &TextureCreationParams) -> Self {
-        let size = wgpu::Extent3d {
+    pub fn create_with_params(device: &Device, params: &TextureCreationParams) -> Self {
+        let size = Extent3d {
             width: ((params.width as f32) * params.render_scale.sqrt()).round() as u32,
             height: ((params.height as f32) * params.render_scale.sqrt()).round() as u32,
             depth_or_array_layers: 1,
         };
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let texture = device.create_texture(&TextureDescriptor {
             label: params.label,
             size,
             mip_level_count: params.mip_level_count,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+            dimension: TextureDimension::D2,
             format: params.format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::RENDER_ATTACHMENT,
             view_formats: params.view_formats,
         });
 
         let view_label = params.label.map(|x| format!("{} View", x));
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        let view = texture.create_view(&TextureViewDescriptor {
             label: view_label.as_deref(),
             // TODO: fix this and move it to the pp layer instead
             mip_level_count: if params.mip_level_count > 0 {
@@ -149,14 +169,14 @@ impl Texture {
 
         let sampler_label = params.label.map(|x| format!("{} Sampler", x));
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&SamplerDescriptor {
             label: sampler_label.as_deref(),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
             mag_filter: params.filter_mode,
             min_filter: params.filter_mode,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -169,12 +189,12 @@ impl Texture {
     }
 
     pub fn create_scaled_mip_filter_surface_texture(
-        device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
+        device: &Device,
+        config: &SurfaceConfiguration,
         format: TextureFormat,
         render_scale: f32,
         mip_level_count: u32,
-        filter_mode: wgpu::FilterMode,
+        filter_mode: FilterMode,
         label: &str,
     ) -> Self {
         Self::create_with_params(
@@ -193,8 +213,8 @@ impl Texture {
     }
 
     pub fn from_bytes(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         bytes: &[u8],
         label: &str,
         is_normal_map: bool,
@@ -206,8 +226,8 @@ impl Texture {
     }
 
     pub fn from_image(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         img: &image::DynamicImage,
         label: Option<&str>,
         is_normal_map: bool,
@@ -218,17 +238,17 @@ impl Texture {
             img,
             label,
             is_normal_map,
-            wgpu::AddressMode::Repeat,
+            AddressMode::Repeat,
         )
     }
 
     pub fn from_image_ex(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         img: &DynamicImage,
         label: Option<&str>,
         is_normal_map: bool,
-        address_mode: wgpu::AddressMode,
+        address_mode: AddressMode,
     ) -> ImageResult<Self> {
         let format: TextureFormat = if is_normal_map {
             // 法线贴图避免伽马矫正
@@ -240,11 +260,11 @@ impl Texture {
     }
 
     pub fn from_image_with_format(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         img: &image::DynamicImage,
         label: Option<&str>,
-        address_mode: wgpu::AddressMode,
+        address_mode: AddressMode,
         format: TextureFormat,
     ) -> ImageResult<Self> {
         let img = img.flipv();
@@ -264,41 +284,41 @@ impl Texture {
     }
 
     pub fn from_image_data_with_format(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         img_data: &[u8],
         label: Option<&str>,
-        address_mode: wgpu::AddressMode,
+        address_mode: AddressMode,
         format: TextureFormat,
         dimensions: (u32, u32),
         bytes_per_pixel: u32,
     ) -> ImageResult<Self> {
-        let size = wgpu::Extent3d {
+        let size = Extent3d {
             width: dimensions.0,
             height: dimensions.1,
             depth_or_array_layers: 1,
         };
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let texture = device.create_texture(&TextureDescriptor {
             label,
             size,
             mip_level_count: 1,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+            dimension: TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
-                aspect: wgpu::TextureAspect::All,
+            ImageCopyTexture {
+                aspect: TextureAspect::All,
                 texture: &texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
+                origin: Origin3d::ZERO,
             },
             img_data,
-            wgpu::ImageDataLayout {
+            ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(bytes_per_pixel * dimensions.0),
                 rows_per_image: Some(dimensions.1),
@@ -306,16 +326,16 @@ impl Texture {
             size,
         );
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = texture.create_view(&TextureViewDescriptor::default());
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&SamplerDescriptor {
             address_mode_u: address_mode,
             address_mode_v: address_mode,
             address_mode_w: address_mode,
             // TODO: configure this
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            mipmap_filter: FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -327,7 +347,7 @@ impl Texture {
     }
 
     pub fn from_image_uninit(
-        device: &wgpu::Device,
+        device: &Device,
         img: &image::DynamicImage,
         label: Option<&str>,
     ) -> ImageResult<Self> {
@@ -337,37 +357,37 @@ impl Texture {
     }
 
     pub fn create_uninit(
-        device: &wgpu::Device,
+        device: &Device,
         width: u32,
         height: u32,
         label: Option<&str>,
     ) -> ImageResult<Self> {
-        let size = wgpu::Extent3d {
+        let size = Extent3d {
             width,
             height,
             depth_or_array_layers: 1,
         };
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let texture = device.create_texture(&TextureDescriptor {
             label,
             size,
             mip_level_count: 1,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+            dimension: TextureDimension::D2,
             format: *DEFAULT_TEXTURE_FORMAT.get().unwrap(),
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = texture.create_view(&TextureViewDescriptor::default());
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            mipmap_filter: FilterMode::Nearest,
             ..Default::default()
         });
 

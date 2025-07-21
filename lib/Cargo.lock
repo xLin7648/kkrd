@@ -891,6 +891,7 @@ dependencies = [
  "ordered-float 5.0.0",
  "parking_lot",
  "pollster",
+ "regex",
  "smallvec",
  "spin_sleep",
  "tokio",

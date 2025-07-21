@@ -20,8 +20,6 @@ mod time;
 mod utils;
 mod y_sort;
 
-mod post_processing;
-
 // 其他可能导入的模块
 use app_events::*;
 use assets::*;
@@ -44,7 +42,6 @@ use texture::*;
 use time::*;
 use utils::*;
 use y_sort::*;
-use post_processing::*;
 
 // 外部依赖库的导入
 use glam::*;
@@ -116,6 +113,12 @@ pub fn get_window_size() -> PhysicalSize<u32> {
     }
 }
 
+static WGPU_RENDERER: OnceLock<Arc<Mutex<WgpuRenderer>>> = OnceLock::new();
+
+pub fn get_global_wgpu() -> Option<&'static Arc<Mutex<WgpuRenderer>>> {
+    WGPU_RENDERER.get()
+}
+
 pub static DEFAULT_TEXTURE_FORMAT: OnceLock<TextureFormat> = OnceLock::new();
 
 #[cfg(target_os = "android")]
@@ -136,7 +139,7 @@ fn main() {
             title_name: "New Game!!!".to_owned(),
             fullscreen: false,
             resolution: Size::Physical(PhysicalSize::new(1280, 720)),
-            min_resolution: Some(Size::Physical(PhysicalSize::new(1280, 720))),
+            min_resolution: None,
         },
     };
 

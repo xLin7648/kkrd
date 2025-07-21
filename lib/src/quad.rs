@@ -153,28 +153,25 @@ pub fn draw_quad(raw_draw_params: RawDrawParams) {
     );
 }
 
-pub fn draw_sprite_ex(
-    texture: TextureHandle,
-    params: DrawTextureParams,
-) {
+pub fn draw_sprite_ex(texture: TextureHandle, params: DrawTextureParams) {
     let mut params = params.clone();
     if params.raw_draw_params.dest_size.is_none() {
-        params.raw_draw_params.dest_size = Some(match Assets::image_size(texture) {
-            ImageSizeResult::Loaded(size) => size,
-            ImageSizeResult::LoadingInProgress => {
-                return;
-            }
-            ImageSizeResult::ImageNotFound => {
-                error!("NO SIZE FOR TEXTURE {:?}", texture);
-                UVec2::ONE
-            }
-        });
+        params.raw_draw_params.dest_size = Some(match texture {
+            TextureHandle::Path(_) | TextureHandle::Raw(_) => match Assets::image_size(texture) {
+                ImageSizeResult::Loaded(size) => size,
+                ImageSizeResult::LoadingInProgress => {
+                    return;
+                }
+                ImageSizeResult::ImageNotFound => {
+                    error!("NO SIZE FOR TEXTURE {:?}", texture);
+                    UVec2::ONE
+                }
+            },
+            TextureHandle::RenderTarget(render_target_id) => return,
+        })
     }
 
-    let vertices = rotated_rectangle(
-        params.scroll_offset,
-        &params.raw_draw_params,
-    );
+    let vertices = rotated_rectangle(params.scroll_offset, &params.raw_draw_params);
 
     const QUAD_INDICES_U32: &[u32] = &[0, 1, 2, 0, 2, 3];
 
@@ -190,12 +187,12 @@ pub fn draw_sprite_ex(
     draw_mesh_ex(mesh, params.raw_draw_params.blend_mode);
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct RawDrawParams {
     pub position: Vec3,
     pub rotation: Rotation,
+    pub scale: Vec2,
     pub dest_size: Option<UVec2>,
-    pub scale: Option<Vec2>,
     pub z_index: i32,
 
     pub pivot: Option<Vec2>,
@@ -205,11 +202,28 @@ pub struct RawDrawParams {
     pub blend_mode: BlendMode,
 }
 
+impl Default for RawDrawParams {
+    fn default() -> Self {
+        Self {
+            position: Vec3::ZERO,
+            rotation: Rotation::Zero,
+            scale: Vec2::ONE,
+            dest_size: None,
+            z_index: 0,
+            pivot: None,
+            color: WHITE,
+            flip_x: false,
+            flip_y: false,
+            blend_mode: BlendMode::None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DrawTextureParams {
     pub scroll_offset: Vec2,
     pub y_sort_offset: f32,
-    pub raw_draw_params: RawDrawParams
+    pub raw_draw_params: RawDrawParams,
 }
 
 impl Default for DrawTextureParams {
@@ -239,7 +253,7 @@ pub enum Rotation {
     Z(f32),
     Euler(f32, f32, f32),
     Quaternion(f32, f32, f32, f32),
-    Zero
+    Zero,
 }
 
 impl Default for Rotation {
@@ -248,18 +262,19 @@ impl Default for Rotation {
     }
 }
 
-pub fn rotated_rectangle(
-    scroll_offset: Vec2,
-    params: &RawDrawParams,
-) -> [SpriteVertex; 4] {
+pub fn rotated_rectangle(scroll_offset: Vec2, params: &RawDrawParams) -> [SpriteVertex; 4] {
     // 处理目标尺寸和翻转
     let (mut scale_w, mut scale_h) = {
-        let scale = params.scale.unwrap_or(Vec2::ONE);
+        let scale = params.scale;
         let wh = params.dest_size.unwrap_or(UVec2::ONE);
         (wh.x as f32 * scale.x, wh.y as f32 * scale.y)
     };
-    if params.flip_x { scale_w = -scale_w; }
-    if params.flip_y { scale_h = -scale_h; }
+    if params.flip_x {
+        scale_w = -scale_w;
+    }
+    if params.flip_y {
+        scale_h = -scale_h;
+    }
 
     // 计算实际尺寸（考虑翻转）
     let abs_w = scale_w.abs();
@@ -278,9 +293,7 @@ pub fn rotated_rectangle(
         Rotation::Y(angle) => vec3(0.0, angle, 0.0),
         Rotation::Z(angle) => vec3(0.0, 0.0, angle),
         Rotation::Euler(x, y, z) => vec3(x, y, z),
-        Rotation::Quaternion(x, y, z, w) => {
-            quat(x, y , z, w).to_euler(EulerRot::XYZ).into()
-        }
+        Rotation::Quaternion(x, y, z, w) => quat(x, y, z, w).to_euler(EulerRot::XYZ).into(),
     };
 
     rotation_angles.x = rotation_angles.x.to_radians();
@@ -297,21 +310,21 @@ pub fn rotated_rectangle(
         let rot_x = Mat3::from_cols(
             Vec3::new(1.0, 0.0, 0.0),
             Vec3::new(0.0, cx, sx),
-            Vec3::new(0.0, -sx, cx)
+            Vec3::new(0.0, -sx, cx),
         );
 
         // 绕Y轴旋转矩阵（yaw）
         let rot_y = Mat3::from_cols(
             Vec3::new(cy, 0.0, -sy),
             Vec3::new(0.0, 1.0, 0.0),
-            Vec3::new(sy, 0.0, cy)
+            Vec3::new(sy, 0.0, cy),
         );
 
         // 绕Z轴旋转矩阵（roll）
         let rot_z = Mat3::from_cols(
             Vec3::new(cz, sz, 0.0),
             Vec3::new(-sz, cz, 0.0),
-            Vec3::new(0.0, 0.0, 1.0)
+            Vec3::new(0.0, 0.0, 1.0),
         );
 
         // 组合旋转：先Z，再X，最后Y (ZXY顺序)
@@ -320,10 +333,10 @@ pub fn rotated_rectangle(
 
     // 定义基础顶点（3D空间）
     let base_vertices = [
-        vec3(0.0, 0.0, 0.0),      // 左上
-        vec3(0.0, scale_h, 0.0),        // 左下
-        vec3(scale_w, scale_h, 0.0),          // 右下
-        vec3(scale_w, 0.0, 0.0),        // 右上
+        vec3(0.0, 0.0, 0.0),         // 左上
+        vec3(0.0, scale_h, 0.0),     // 左下
+        vec3(scale_w, scale_h, 0.0), // 右下
+        vec3(scale_w, 0.0, 0.0),     // 右上
     ];
 
     // 应用旋转和平移
@@ -340,30 +353,14 @@ pub fn rotated_rectangle(
         scroll_offset,
         scroll_offset + vec2(0.0, 1.0),
         scroll_offset + vec2(1.0, 1.0),
-        scroll_offset + vec2(1.0, 0.0)
+        scroll_offset + vec2(1.0, 0.0),
     ];
 
     // 创建最终顶点
     [
-        SpriteVertex::new(
-            world_vertices[0],
-            tex_coords[0],
-            params.color,
-        ),
-        SpriteVertex::new(
-            world_vertices[1],
-            tex_coords[1],
-            params.color,
-        ),
-        SpriteVertex::new(
-            world_vertices[2],
-            tex_coords[2],
-            params.color,
-        ),
-        SpriteVertex::new(
-            world_vertices[3],
-            tex_coords[3],
-            params.color,
-        ),
+        SpriteVertex::new(world_vertices[0], tex_coords[0], params.color),
+        SpriteVertex::new(world_vertices[1], tex_coords[1], params.color),
+        SpriteVertex::new(world_vertices[2], tex_coords[2], params.color),
+        SpriteVertex::new(world_vertices[3], tex_coords[3], params.color),
     ]
 }

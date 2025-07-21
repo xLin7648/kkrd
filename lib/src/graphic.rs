@@ -1,7 +1,7 @@
 use crate::*;
 
 use anyhow::Result;
-use wgpu::TextureView;
+use wgpu::{AddressMode, CommandEncoderDescriptor, LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, ShaderModuleDescriptor, ShaderSource, StoreOp, TextureView, TextureViewDescriptor};
 
 pub type PipelineMap = HashMap<String, wgpu::RenderPipeline>;
 pub type UserPipelineMap = HashMap<String, UserRenderPipeline>;
@@ -15,28 +15,28 @@ pub enum RenderPipeline<'a> {
 
 pub struct UserRenderPipeline {
     pub pipeline: wgpu::RenderPipeline,
-    pub layout: wgpu::BindGroupLayout,
-    pub bind_group: wgpu::BindGroup,
-    pub buffers: HashMap<String, wgpu::Buffer>,
+    pub layout: BindGroupLayout,
+    pub bind_group: BindGroup,
+    pub buffers: HashMap<String, Buffer>,
 }
 
 pub fn depth_stencil_attachment(
     enabled: bool,
-    view: &wgpu::TextureView,
+    view: &TextureView,
     is_first: bool,
-) -> Option<wgpu::RenderPassDepthStencilAttachment> {
+) -> Option<RenderPassDepthStencilAttachment> {
     let clear_depth = if is_first {
-        wgpu::LoadOp::Clear(1.0)
+        LoadOp::Clear(1.0)
     } else {
-        wgpu::LoadOp::Load
+        LoadOp::Load
     };
 
     if enabled {
-        Some(wgpu::RenderPassDepthStencilAttachment {
+        Some(RenderPassDepthStencilAttachment {
             view,
-            depth_ops: Some(wgpu::Operations {
+            depth_ops: Some(Operations {
                 load: clear_depth,
-                store: wgpu::StoreOp::Store,
+                store: StoreOp::Store,
             }),
             stencil_ops: None,
         })
@@ -45,10 +45,10 @@ pub fn depth_stencil_attachment(
     }
 }
 
-pub fn shader_to_wgpu(shader: &Shader) -> wgpu::ShaderModuleDescriptor<'_> {
-    wgpu::ShaderModuleDescriptor {
+pub fn shader_to_wgpu(shader: &Shader) -> ShaderModuleDescriptor<'_> {
+    ShaderModuleDescriptor {
         label: Some(&shader.name),
-        source: wgpu::ShaderSource::Wgsl(shader.source.as_str().into()),
+        source: ShaderSource::Wgsl(shader.source.as_str().into()),
     }
 }
 
@@ -91,8 +91,8 @@ pub struct WgpuRenderer {
 
     pub pipelines: PipelineMap,
     pub user_pipelines: UserPipelineMap,
-    pub shaders: RefCell<ShaderMap>,
-    pub render_targets: RefCell<RenderTargetMap>,
+    pub shaders: Arc<Mutex<ShaderMap>>,
+    pub render_targets: Arc<Mutex<RenderTargetMap>>,
 
     pub vertex_buffer: SizedBuffer,
     pub index_buffer: SizedBuffer,
@@ -102,9 +102,6 @@ pub struct WgpuRenderer {
     pub textures: Arc<Mutex<TextureMap>>,
     pub texture_layout: Arc<BindGroupLayout>,
     pub depth_texture: Arc<Texture>,
-    pub first_pass_texture: BindableTexture,
-
-    pub post_processing_effects: RefCell<Vec<PostProcessingEffect>>,
 
     pub sprite_shader_id: ShaderId,
     pub error_shader_id: ShaderId,
@@ -132,7 +129,7 @@ impl WgpuRenderer {
                 "1px",
                 include_bytes!("assets/1px.png"),
                 textures,
-                wgpu::AddressMode::Repeat,
+                AddressMode::Repeat,
             );
 
             load_texture_from_engine_bytes(
@@ -140,7 +137,7 @@ impl WgpuRenderer {
                 "Tap",
                 include_bytes!("assets/Tap2.png"),
                 textures,
-                wgpu::AddressMode::Repeat,
+                AddressMode::Repeat,
             );
         }
 
@@ -205,19 +202,17 @@ impl WgpuRenderer {
 
         let mut shaders = ShaderMap::new();
 
-        let sprite_shader_id = create_shader(
+        let sprite_shader_id = create_shader1(
             &mut shaders,
             "sprite",
-            &sprite_shader_from_fragment(include_str!("shaders/sprite.wgsl")),
-            HashMap::new(),
+            &include_str!("shaders/sprite.wgsl")
         )
         .unwrap();
 
-        let error_shader_id = create_shader(
+        let error_shader_id = create_shader1(
             &mut shaders,
             "error",
-            &sprite_shader_from_fragment(include_str!("shaders/error.wgsl")),
-            HashMap::new(),
+            &include_str!("shaders/error.wgsl")
         )
         .unwrap();
 
@@ -225,17 +220,6 @@ impl WgpuRenderer {
             let config = context.config.read();
             (config.width, config.height)
         };
-
-        let first_pass_texture = BindableTexture::new(
-            &context.device,
-            &context.texture_layout,
-            &TextureCreationParams {
-                label: Some("First Pass Texture"),
-                width,
-                height,
-                ..Default::default()
-            },
-        );
 
         let bind = get_run_time_context();
         let run_time_context = bind.read();
@@ -246,16 +230,6 @@ impl WgpuRenderer {
             "Depth Texture",
             run_time_context.sample_count.into()
         );
-
-        // let hdr_bind_group_layout = create_hdr_bind_group_layout(&context.device);
-        // let tonemapping_pipeline = create_tonemapping_pipeline(
-        //     &context.device,
-        //     &context.config.read(),
-        //     &hdr_bind_group_layout,
-        // );
-        // let hdr_texture = create_hdr_texture(&context.device, &context.config.read());
-        // let hdr_bind_group =
-        //     create_hdr_bind_group(&context.device, &hdr_bind_group_layout, &hdr_texture);
 
         let msaa_texture = create_multisampled_framebuffer(
             &context.device,
@@ -274,8 +248,8 @@ impl WgpuRenderer {
             pipelines: HashMap::new(),
             user_pipelines: HashMap::new(),
 
-            shaders: RefCell::new(shaders),
-            render_targets: RefCell::new(HashMap::new()),
+            shaders: Arc::new(Mutex::new(shaders)),
+            render_targets: Arc::new(Mutex::new(HashMap::new())),
 
             vertex_buffer,
             index_buffer,
@@ -283,10 +257,6 @@ impl WgpuRenderer {
 
             sprite_shader_id,
             error_shader_id,
-
-            first_pass_texture,
-
-            post_processing_effects: RefCell::new(Vec::new()),
 
             depth_texture: Arc::new(depth_texture),
             textures: context.textures.clone(),
@@ -377,7 +347,7 @@ impl WgpuRenderer {
 
         let surface_view = output
             .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+            .create_view(&TextureViewDescriptor::default());
 
         let (sample_count, clear_color) = {
             let bind = get_run_time_context();
@@ -400,25 +370,25 @@ impl WgpuRenderer {
             let mut encoder =
                 self.context
                     .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    .create_command_encoder(&CommandEncoderDescriptor {
                         label: Some("Msaa Encoder"),
                     });
 
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("MSAA Resolve Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(RenderPassColorAttachment {
                     view: &self.msaa_texture.0,
                     resolve_target: Some(&surface_view),
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &self.msaa_texture.1.as_ref().unwrap(), // MSAA 深度附件
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
@@ -440,7 +410,7 @@ impl WgpuRenderer {
         let mut encoder =
             self.context
                 .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                .create_command_encoder(&CommandEncoderDescriptor {
                     label: Some("Clear buffer encoder"),
                 });
 
@@ -462,14 +432,5 @@ impl WgpuRenderer {
         let (width, height) = (self.size.width as f32, self.size.height as f32);
 
         Mat4::orthographic_rh(0., width, height, 0., -1., 1.)
-    }
-
-    pub fn create_material(
-        &mut self,
-        name: &str,
-        source: &str,
-        uniform_defs: UniformDefs,
-    ) -> Result<ShaderId> {
-        create_shader(&mut self.shaders.borrow_mut(), name, source, uniform_defs)
     }
 }

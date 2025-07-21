@@ -14,7 +14,6 @@ pub fn detect_frametime() -> Duration {
 
 #[allow(unused_variables)]
 pub fn framerate_limiter() {
-    
     let limit = if let Some(frame_rate) = get_run_time_context().read().target_frame_rate {
         Duration::from_secs_f64(1.0 / frame_rate as f64)
     } else {

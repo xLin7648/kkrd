@@ -1,3 +1,5 @@
+use std::error;
+
 use crate::*;
 
 static SHADER_UNIFORM_TABLE: Lazy<RwLock<ShaderUniformTable>> =
@@ -16,7 +18,7 @@ pub fn get_shader_instance(
     id: ShaderInstanceId,
 ) -> MappedRwLockReadGuard<'static, ShaderInstance> {
     RwLockReadGuard::map(SHADER_UNIFORM_TABLE.read(), |x| {
-        &x.instances[id.0 as usize]
+        &x.instances[id.0 as usize - 1]
     })
 }
 
@@ -26,25 +28,38 @@ pub fn set_uniform(name: impl Into<String>, value: Uniform) {
     if instance_id > 0 {
         let mut table = SHADER_UNIFORM_TABLE.write();
 
-        if let Some(instance) = table.instances.get(instance_id as usize) {
+        if let Some(instance) = table.instances.get(instance_id as usize - 1) {
             let mut new_instance = instance.clone();
             new_instance.uniforms.insert(name.into(), value);
+
+            // TIME Uniform
+            {
+                let timer = get_timer().read().clone();
+
+                let cur_time = timer.get_time();
+
+                let times: [OrderedFloat<f32>; 4] = [
+                    OrderedFloat::<f32>(timer.get_time()),
+                    OrderedFloat::<f32>(cur_time.sin()),
+                    OrderedFloat::<f32>(cur_time.cos()),
+                    OrderedFloat::<f32>(timer.get_delta_time())
+                ];
+
+                new_instance.uniforms.insert("time".to_owned(), Uniform::Vec4(times));
+            }
 
             table.instances.push(new_instance);
 
             CURRENT_SHADER_INSTANCE_ID
-                .store(table.instances.len() as u32 - 1, Ordering::SeqCst);
+                .store(table.instances.len() as u32, Ordering::SeqCst);
         } else {
-            panic!(
-    "Current shader instance id is invalid.
-
-                This is likely a bug, \
-     please report an issue on https://github.com/darthdeus/comfy/issues with \
-     some information on what you did."
-);
+            panic!("Current shader instance id is invalid.");
+            // This is likely a bug, \
+            //     please report an issue on https://github.com/darthdeus/comfy/issues with \
+            //     some information on what you did."
         }
     } else {
-        panic!("Trying to set a uniform with no shader active");
+        // error!("Trying to set a uniform with no shader active");
     }
 }
 
@@ -58,7 +73,7 @@ pub fn use_shader(shader_id: ShaderId) {
         .push(ShaderInstance { id: shader_id, uniforms: Default::default() });
 
     CURRENT_SHADER_INSTANCE_ID
-        .store(table.instances.len() as u32 - 1, Ordering::SeqCst);
+        .store(table.instances.len() as u32, Ordering::SeqCst);
 }
 
 pub fn use_default_shader() {

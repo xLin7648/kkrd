@@ -1,4 +1,4 @@
-use wgpu::TextureView;
+use wgpu::{IndexFormat, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp, TextureView};
 
 use crate::*;
 
@@ -13,26 +13,6 @@ pub fn run_batched_render_passes(
     let mut is_first = true;
 
     let queues = consume_render_queues();
-
-    // let render_passes = {
-    //     span_with_timing!("collect_render_passes");
-    //
-    //     let mut render_passes =
-    //         HashMap::<MeshGroupKey, Vec<RenderPassData>>::new();
-    //
-    //     for (key, queue) in queues.into_iter() {
-    //         render_passes.entry(key).or_default().push(RenderPassData {
-    //             z_index: key.z_index,
-    //             blend_mode: key.blend_mode,
-    //             shader: key.shader,
-    //             render_target: key.render_target,
-    //             texture: key.texture_id,
-    //             data: queue.into(),
-    //         });
-    //     }
-    //
-    //     render_passes
-    // };
 
     for (key, mut meshes) in queues.into_iter().sorted_by_key(|(k, _)| k.z_index) {
         // TODO: add this back later
@@ -58,41 +38,6 @@ pub fn run_batched_render_passes(
         );
 
         is_first = false;
-    }
-
-    if is_first {
-        render_meshes(
-            context,
-            sample_count,
-            clear_color,
-            MeshDrawData {
-                blend_mode: BlendMode::Alpha,
-                texture: TextureHandle::from_path("1px"),
-                shader: ShaderInstanceId::default(),
-                render_target: RenderTargetId::default(),
-                data: Default::default(),
-            },
-            sprite_shader_id,
-            error_shader_id,
-            default_surface,
-            is_first
-        );
-
-        // MeshGroupKey {
-        //     z_index: 0,
-        //     blend_mode: BlendMode::Alpha,
-        //     texture_id: TextureHandle::from_path("1px"),
-        //     shader: None,
-        //     render_target: None,
-        // },
-        // RenderPassData {
-        //     z_index: 0,
-        //     blend_mode: BlendMode::Alpha,
-        //     texture: TextureHandle::from_path("1px"),
-        //     shader: None,
-        //     render_target: None,
-        //     data: SmallVec::new(),
-        // },
     }
 }
 
@@ -132,7 +77,7 @@ pub fn render_meshes(
     );
 
     let textures = context.textures.lock();
-    // let render_targets = c.render_targets.borrow();
+    let render_targets = context.render_targets.lock();
 
     let mut encoder = context.context.device.simple_encoder("Mesh Render Encoder");
 
@@ -145,20 +90,27 @@ pub fn render_meshes(
             }
         );
 
-        let surface = if sample_count != Msaa::Off {
-            &context.msaa_texture.0
+        let target_view = if pass_data.render_target.0 > 0 {
+            &render_targets
+                .get(&pass_data.render_target)
+                .expect("user render target must exist when used")
+                .view
         } else {
-            default_surface
+            if sample_count != Msaa::Off {
+                &context.msaa_texture.0
+            } else {
+                default_surface
+            }
         };
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Mesh Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: surface,
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: target_view,
                 resolve_target: None,
-                ops: wgpu::Operations {
+                ops: Operations {
                     load: clear_color,
-                    store: wgpu::StoreOp::Store,
+                    store: StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: depth_stencil_attachment(
@@ -190,10 +142,10 @@ pub fn render_meshes(
 
         if !all_indices.is_empty() {
             render_pass
-                .set_index_buffer(context.index_buffer.buffer.slice(..), wgpu::IndexFormat::Uint32);
+                .set_index_buffer(context.index_buffer.buffer.slice(..), IndexFormat::Uint32);
         }
 
-        /* let tex_bind_group = match tex_handle {
+        let tex_bind_group = match tex_handle {
             TextureHandle::RenderTarget(render_target_id) => {
                 &render_targets.get(&render_target_id).unwrap().bind_group
             }
@@ -207,16 +159,7 @@ pub fn render_meshes(
                     })
                     .bind_group
             }
-        }; */
-
-        let tex_bind_group = &textures
-            .get(&tex_handle)
-            .unwrap_or_else(|| {
-                textures
-                    .get(&texture_id("error"))
-                    .expect("error texture must exist")
-            })
-            .bind_group;
+        };
 
         render_pass.set_bind_group(0, tex_bind_group, &[]);
         render_pass.set_bind_group(1, context.camera_bind_group.as_ref(), &[]);

@@ -64,6 +64,29 @@ impl Time {
             0.0
         };
     }
+
+    // 获取当前时间 (秒)
+    pub fn get_time(&self) -> f32 {
+        self.current_time.as_secs_f32()
+    }
+
+    // 获取增量时间 (秒)
+    pub fn get_delta_time(&self) -> f32 {
+        self.delta_time.as_secs_f32()
+    }
+
+    // 获取平均FPS
+    pub fn get_fps(&self) -> u32 {
+        self.fps.round() as u32
+    }
+
+    pub fn print_time_data(&self) {
+        println!(
+            "Time: {:.3}s | FPS: {}(avg)",
+            self.current_time.as_secs_f32(),
+            self.fps.round() as u32,
+        );
+    }
 }
 
 pub fn update() {

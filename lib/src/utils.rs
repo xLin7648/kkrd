@@ -2,42 +2,16 @@ use crate::*;
 
 use anyhow::*;
 use image::DynamicImage;
-use wgpu::FrontFace;
+use wgpu::{vertex_attr_array, AddressMode, BindingResource, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferAddress, BufferDescriptor, ColorTargetState, ColorWrites, CommandEncoder, CommandEncoderDescriptor, CompareFunction, DepthBiasState, DepthStencilState, Extent3d, Face, FragmentState, FrontFace, LoadOp, MultisampleState, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, StencilState, TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode};
 use TextureFormat;
 
-pub const FRAG_SHADER_PREFIX: &str = include_str!("shaders/frag-shader-prefix.wgsl");
-
-pub const CAMERA_BIND_GROUP_PREFIX: &str = include_str!("shaders/camera-bind-group.wgsl");
-
-pub const SHADER_POST_PROCESSING_VERTEX: &str = include_str!("shaders/post_processing_vertex.wgsl");
-
-pub const COPY_SHADER_SRC: &str = include_str!("shaders/copy.wgsl");
+pub const VERTEX_SHADER: &str = include_str!("shaders/vertex-shader.wgsl");
 
 pub fn sprite_shader_from_fragment(source: &str) -> String {
     format!(
-        "{}{}{}",
-        CAMERA_BIND_GROUP_PREFIX, FRAG_SHADER_PREFIX, source
+        "{}{}",
+        VERTEX_SHADER, source
     )
-}
-
-pub fn post_process_shader_from_fragment(source: &str) -> String {
-    format!(
-        "{}{}{}",
-        CAMERA_BIND_GROUP_PREFIX, SHADER_POST_PROCESSING_VERTEX, source
-    )
-}
-
-pub fn create_engine_post_processing_shader(
-    shaders: &mut ShaderMap,
-    name: &str,
-    shader_str: &str,
-) -> Shader {
-    let full_shader = post_process_shader_from_fragment(shader_str);
-
-    let shader_id = create_shader(shaders, name, &full_shader, HashMap::new())
-        .expect("Failed to create shader");
-
-    shaders.get(shader_id).expect("Shader not found").clone()
 }
 
 pub fn load_texture_from_engine_bytes(
@@ -45,7 +19,7 @@ pub fn load_texture_from_engine_bytes(
     name: &str,
     bytes: &[u8],
     textures: &mut TextureMap,
-    address_mode: wgpu::AddressMode,
+    address_mode: AddressMode,
 ) {
     let img = image::load_from_memory(bytes).expect("must be valid image");
     let texture = Texture::from_image_ex(
@@ -165,37 +139,37 @@ impl SpriteVertex {
 }
 
 pub trait DeviceExtensions {
-    fn simple_encoder(&self, label: &str) -> wgpu::CommandEncoder;
+    fn simple_encoder(&self, label: &str) -> CommandEncoder;
     fn simple_bind_group(
         &self,
         label: Option<&str>,
         texture: &Texture,
-        layout: &wgpu::BindGroupLayout,
-    ) -> wgpu::BindGroup;
+        layout: &BindGroupLayout,
+    ) -> BindGroup;
 }
 
-impl DeviceExtensions for wgpu::Device {
-    fn simple_encoder(&self, label: &str) -> wgpu::CommandEncoder {
-        self.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
+impl DeviceExtensions for Device {
+    fn simple_encoder(&self, label: &str) -> CommandEncoder {
+        self.create_command_encoder(&CommandEncoderDescriptor { label: Some(label) })
     }
 
     fn simple_bind_group(
         &self,
         label: Option<&str>,
         texture: &Texture,
-        layout: &wgpu::BindGroupLayout,
-    ) -> wgpu::BindGroup {
-        self.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &BindGroupLayout,
+    ) -> BindGroup {
+        self.create_bind_group(&BindGroupDescriptor {
             label,
             layout,
             entries: &[
-                wgpu::BindGroupEntry {
+                BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                    resource: BindingResource::TextureView(&texture.view),
                 },
-                wgpu::BindGroupEntry {
+                BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    resource: BindingResource::Sampler(&texture.sampler),
                 },
             ],
         })
@@ -203,18 +177,18 @@ impl DeviceExtensions for wgpu::Device {
 }
 
 pub struct SizedBuffer {
-    pub buffer: wgpu::Buffer,
+    pub buffer: Buffer,
     pub size: usize,
     pub buffer_type: BufferType,
     pub label: String,
 }
 
 impl SizedBuffer {
-    pub fn new(label: &str, device: &wgpu::Device, size: usize, buffer_type: BufferType) -> Self {
-        let desc = wgpu::BufferDescriptor {
+    pub fn new(label: &str, device: &Device, size: usize, buffer_type: BufferType) -> Self {
+        let desc = BufferDescriptor {
             label: Some(label),
             usage: buffer_type.usage(),
-            size: size as wgpu::BufferAddress,
+            size: size as BufferAddress,
             mapped_at_creation: false,
         };
 
@@ -230,14 +204,14 @@ impl SizedBuffer {
 
     pub fn ensure_size_and_copy(
         &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        device: &Device,
+        queue: &Queue,
         data: &[u8],
     ) {
         if data.len() > self.size {
             self.buffer.destroy();
             self.size = data.len();
-            self.buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            self.buffer = device.create_buffer_init(&util::BufferInitDescriptor {
                 label: Some(&self.label),
                 usage: self.buffer_type.usage(),
                 contents: data,
@@ -258,13 +232,13 @@ pub enum BufferType {
 }
 
 impl BufferType {
-    pub fn usage(&self) -> wgpu::BufferUsages {
+    pub fn usage(&self) -> BufferUsages {
         match self {
-            BufferType::Vertex => wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            BufferType::Index => wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            BufferType::Instance => wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            BufferType::Uniform => wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            BufferType::Read => wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            BufferType::Vertex => BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            BufferType::Index => BufferUsages::INDEX | BufferUsages::COPY_DST,
+            BufferType::Instance => BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            BufferType::Uniform => BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            BufferType::Read => BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             BufferType::Storage => {
                 todo!()
             }
@@ -274,11 +248,11 @@ impl BufferType {
 
 pub fn create_render_pipeline(
     label: &str,
-    device: &wgpu::Device,
-    layout: &wgpu::PipelineLayout,
+    device: &Device,
+    layout: &PipelineLayout,
     color_format: TextureFormat,
     depth_format: Option<TextureFormat>,
-    vertex_layouts: &[wgpu::VertexBufferLayout],
+    vertex_layouts: &[VertexBufferLayout],
     shader: &Shader,
     blend_mode: BlendMode,
     sample_count: u32
@@ -299,88 +273,88 @@ pub fn create_render_pipeline(
     info!("CREATED SHADER, GOT {:?}", shader);
 
     let blend_state = match blend_mode {
-        BlendMode::Alpha => Some(wgpu::BlendState::ALPHA_BLENDING),
-        // BlendMode::Additive => Some(wgpu::BlendState::ALPHA_BLENDING),
-        BlendMode::Additive => Some(wgpu::BlendState {
-            color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::SrcAlpha,
-                dst_factor: wgpu::BlendFactor::DstAlpha,
-                operation: wgpu::BlendOperation::Add,
+        BlendMode::Alpha => Some(BlendState::ALPHA_BLENDING),
+        // BlendMode::Additive => Some(BlendState::ALPHA_BLENDING),
+        BlendMode::Additive => Some(BlendState {
+            color: BlendComponent {
+                src_factor: BlendFactor::SrcAlpha,
+                dst_factor: BlendFactor::DstAlpha,
+                operation: BlendOperation::Add,
             },
-            alpha: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
+            alpha: BlendComponent {
+                src_factor: BlendFactor::One,
+                dst_factor: BlendFactor::One,
+                operation: BlendOperation::Add,
             },
         }),
         // BlendMode::Additive => {
-        //     Some(wgpu::BlendState {
-        //         color: wgpu::BlendComponent {
-        //             src_factor: wgpu::BlendFactor::One,
-        //             dst_factor: wgpu::BlendFactor::One,
-        //             operation: wgpu::BlendOperation::Add,
+        //     Some(BlendState {
+        //         color: BlendComponent {
+        //             src_factor: BlendFactor::One,
+        //             dst_factor: BlendFactor::One,
+        //             operation: BlendOperation::Add,
         //         },
-        //         // alpha: wgpu::BlendComponent::REPLACE,
-        //         alpha: wgpu::BlendComponent {
-        //             src_factor: wgpu::BlendFactor::One,
-        //             dst_factor: wgpu::BlendFactor::One,
-        //             operation: wgpu::BlendOperation::Add,
+        //         // alpha: BlendComponent::REPLACE,
+        //         alpha: BlendComponent {
+        //             src_factor: BlendFactor::One,
+        //             dst_factor: BlendFactor::One,
+        //             operation: BlendOperation::Add,
         //         },
         //     })
         // }
-        BlendMode::None => Some(wgpu::BlendState::ALPHA_BLENDING),
+        BlendMode::None => Some(BlendState::ALPHA_BLENDING),
     };
 
-    // let blend_state = Some(wgpu::BlendState {
-    //     color: wgpu::BlendComponent {
-    //         src_factor: wgpu::BlendFactor::One,
-    //         dst_factor: wgpu::BlendFactor::One,
-    //         operation: wgpu::BlendOperation::Add,
+    // let blend_state = Some(BlendState {
+    //     color: BlendComponent {
+    //         src_factor: BlendFactor::One,
+    //         dst_factor: BlendFactor::One,
+    //         operation: BlendOperation::Add,
     //     },
-    //     // alpha: wgpu::BlendComponent::REPLACE,
-    //     alpha: wgpu::BlendComponent {
-    //         src_factor: wgpu::BlendFactor::One,
-    //         dst_factor: wgpu::BlendFactor::One,
-    //         operation: wgpu::BlendOperation::Add,
+    //     // alpha: BlendComponent::REPLACE,
+    //     alpha: BlendComponent {
+    //         src_factor: BlendFactor::One,
+    //         dst_factor: BlendFactor::One,
+    //         operation: BlendOperation::Add,
     //     },
     // });
 
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(layout),
-        vertex: wgpu::VertexState {
+        vertex: VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
             buffers: vertex_layouts,
             compilation_options: PipelineCompilationOptions::default(),
         },
-        fragment: Some(wgpu::FragmentState {
+        fragment: Some(FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
+            targets: &[Some(ColorTargetState {
                 format: color_format,
                 blend: blend_state,
-                write_mask: wgpu::ColorWrites::ALL,
+                write_mask: ColorWrites::ALL,
             })],
             compilation_options: PipelineCompilationOptions::default(),
         }),
 
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
             front_face: FrontFace::Cw, // 顺时针三角形为正面
-            cull_mode: Some(wgpu::Face::Back),
+            cull_mode: Some(Face::Back),
             ..Default::default()
         },
 
-        depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
+        depth_stencil: depth_format.map(|format| DepthStencilState {
             format,
             depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::LessEqual,
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
+            depth_compare: CompareFunction::LessEqual,
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
         }),
 
-        multisample: wgpu::MultisampleState {
+        multisample: MultisampleState {
             count: sample_count,
             mask: !0,
             alpha_to_coverage_enabled: false,
@@ -394,16 +368,16 @@ pub fn create_render_pipeline(
 
 pub fn create_render_pipeline_with_layout(
     name: &str,
-    device: &wgpu::Device,
+    device: &Device,
     color_format: TextureFormat,
-    bind_group_layouts: &[&wgpu::BindGroupLayout],
-    vertex_layouts: &[wgpu::VertexBufferLayout],
+    bind_group_layouts: &[&BindGroupLayout],
+    vertex_layouts: &[VertexBufferLayout],
     shader: &Shader,
     blend_mode: BlendMode,
     enable_z_buffer: bool,
     sample_count: u32
 ) -> Result<wgpu::RenderPipeline> {
-    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some(&format!("{} Pipeline Layout", name)),
         bind_group_layouts,
         push_constant_ranges: &[],
@@ -427,209 +401,77 @@ pub fn create_render_pipeline_with_layout(
 }
 
 pub trait Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
+    fn desc<'a>() -> VertexBufferLayout<'a>;
 }
 
-const ATTRIBS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
+const ATTRIBS: [VertexAttribute; 3] = vertex_attr_array![
     0 => Float32x3,
     1 => Float32x2,
     2 => Float32x4,
 ];
 
 impl Vertex for SpriteVertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<SpriteVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
+    fn desc<'a>() -> VertexBufferLayout<'a> {
+        VertexBufferLayout {
+            array_stride: size_of::<SpriteVertex>() as BufferAddress,
+            step_mode: VertexStepMode::Vertex,
             attributes: &ATTRIBS,
         }
     }
 }
 
-pub fn color_to_clear_op(color: Option<Color>) -> wgpu::LoadOp<wgpu::Color> {
+pub fn color_to_clear_op(color: Option<Color>) -> LoadOp<wgpu::Color> {
     match color {
-        Some(clear_color) => wgpu::LoadOp::Clear(clear_color.into()),
-        None => wgpu::LoadOp::Load,
+        Some(clear_color) => LoadOp::Clear(clear_color.into()),
+        None => LoadOp::Load,
     }
 }
 
 pub fn create_multisampled_framebuffer(
-    device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
+    device: &Device,
+    config: &SurfaceConfiguration,
     sample_count: u32,
-) -> (wgpu::TextureView, Option<wgpu::TextureView>) {
+) -> (TextureView, Option<TextureView>) {
     // 1. 优先选择移动端兼容格式
     let format = config.format;
 
     // 2. 创建 MSAA 颜色纹理
-    let color_texture = device.create_texture(&wgpu::TextureDescriptor {
+    let color_texture = device.create_texture(&TextureDescriptor {
         label: Some("Multisampled Color Attachment"),
-        size: wgpu::Extent3d {
+        size: Extent3d {
             width: config.width,
             height: config.height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count,
-        dimension: wgpu::TextureDimension::D2,
+        dimension: TextureDimension::D2,
         format, // 使用调整后的格式
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[format], // 关键修复：声明视图格式
     });
 
     // 3. 创建 MSAA 深度纹理（移动端必需）
-    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+    let depth_texture = device.create_texture(&TextureDescriptor {
         label: Some("Multisampled Depth Attachment"),
-        size: wgpu::Extent3d {
+        size: Extent3d {
             width: config.width,
             height: config.height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count,
-        dimension: wgpu::TextureDimension::D2,
+        dimension: TextureDimension::D2,
         format: TextureFormat::Depth32Float, // 或 Depth24Plus
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
 
     // 4. 返回视图
     (
-        color_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-        Some(depth_texture.create_view(&wgpu::TextureViewDescriptor::default())),
+        color_texture.create_view(&TextureViewDescriptor::default()),
+        Some(depth_texture.create_view(&TextureViewDescriptor::default())),
     )
-}
-
-pub fn create_hdr_texture(
-    device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
-) -> wgpu::TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        size: wgpu::Extent3d {
-            width: config.width,
-            height: config.height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        label: Some("HDR Texture"),
-        view_formats: &[],
-    });
-
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-pub fn create_tonemapping_pipeline(
-    device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
-    hdr_bind_group_layout: &wgpu::BindGroupLayout,
-) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Tonemapping Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/tonemapping.wgsl").into()),
-    });
-
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Tonemapping Pipeline Layout"),
-        bind_group_layouts: &[hdr_bind_group_layout],
-        push_constant_ranges: &[],
-    });
-
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Tonemapping Pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[],
-            compilation_options: PipelineCompilationOptions::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: config.format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Cw,
-            cull_mode: None,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            unclipped_depth: false,
-            conservative: false,
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview: None,
-        cache: None,
-    })
-}
-
-pub fn create_hdr_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
-        label: Some("hdr_bind_group_layout"),
-    })
-}
-
-pub fn create_hdr_bind_group(
-    device: &wgpu::Device,
-    hdr_bind_group_layout: &wgpu::BindGroupLayout,
-    hdr_texture: &wgpu::TextureView,
-) -> wgpu::BindGroup {
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Nearest,
-        ..Default::default()
-    });
-
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: hdr_bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(hdr_texture),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            },
-        ],
-        label: Some("hdr_bind_group"),
-    })
 }
 
 pub fn is_mobile() -> bool {

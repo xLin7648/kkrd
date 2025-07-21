@@ -1,4 +1,7 @@
-use wgpu::{Features, Limits, RequestAdapterOptions, SamplerBindingType, TextureSampleType, TextureUsages, TextureViewDimension};
+use wgpu::{
+    Features, Limits, RequestAdapterOptions, SamplerBindingType, TextureSampleType, TextureUsages,
+    TextureViewDimension,
+};
 
 use crate::*;
 
@@ -100,28 +103,27 @@ pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
 
     surface.configure(&device, &config);
 
-    let texture_bind_group_layout =
-        device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: TextureViewDimension::D2,
-                        sample_type: TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
+    let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: TextureViewDimension::D2,
+                    sample_type: TextureSampleType::Float { filterable: true },
                 },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("texture_bind_group_layout"),
-        });
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+        label: Some("texture_bind_group_layout"),
+    });
 
     let textures = Arc::new(Mutex::new(HashMap::new()));
 

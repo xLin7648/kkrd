@@ -115,7 +115,7 @@ pub fn get_run_time_context() -> Arc<RwLock<RunTimeContext>> {
         .clone()
 }
 
-pub fn clear_background(color: Color) {
+pub fn set_clear_background_color(color: Color) {
     get_run_time_context().write().clear_color = color;
 }
 

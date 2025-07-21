@@ -9,65 +9,89 @@ pub trait GameLoop: Send {
 #[derive(Default)]
 pub struct MyGame {
     pub r: f32,
+    pub glitch_shader_id: Option<ShaderId>,
+    pub my_render_target: Option<RenderTargetId>,
 }
 
-impl MyGame {
-    pub async fn line(&mut self) {
-        // if let Some(cam) = get_camera() {
-        //     cam.write()
-        //         .set_rotation_angle(vec3(0., 0., time::get_time() * 20.0));
-        // }
+impl MyGame {}
 
-        // draw_sprite_ex(
-        //     texture_id("Tap"),
-        //     Vec2::ZERO,
-        //     WHITE,
-        //     0,
-        //     DrawTextureParams {
-        //         dest_size: Some(vec2(989. * 0.2, 100. * 0.2)),
-        //         pivot: Some(vec2(0.5, 0.5)),
-        //         ..Default::default()
-        //     },
-        // );
+#[async_trait]
+impl GameLoop for MyGame {
+    async fn start(&mut self) {
+        let base_camera = BaseCamera::new(vec3(0.0, 0.0, -100.), 0.01, 10000.0);
+        let main_camera = Camera2D::new(base_camera, 540.0);
+        set_camera(main_camera);
+
+        self.glitch_shader_id =
+            Some(create_shader("glitch", &include_str!("shaders/glitch.wgsl")).unwrap());
+
+        self.my_render_target = Some(create_render_target(&RenderTargetParams {
+            label: "my-render-target".to_string(),
+            size: uvec2(1280, 720),
+            filter_mode: wgpu::FilterMode::Nearest,
+        }));
+    }
+
+    async fn update(&mut self) {
+        let shader_id = self.glitch_shader_id.unwrap();
+        let render_target_id = self.my_render_target.unwrap();
+
+        use_render_target(render_target_id);
 
         draw_sprite_ex(
             texture_id("Tap"),
             DrawTextureParams {
                 raw_draw_params: RawDrawParams {
-                    scale: Some(vec2(0.2, 0.2)),
+                    position: vec3(200.0, 200.0, 0.0),
+                    scale: vec2(0.2, 0.2),
                     rotation: Default::default(),
                     pivot: None,
                     ..Default::default()
                 },
                 ..Default::default()
-            }
+            },
         );
 
-        // draw_rect_rot(
-        //     0., 0.,
-        //     5., 1080.,
-        //     Rotation::Euler(0., 0., 0.),
-        //     vec2(0.5, 0.5),
-        //     WHITE,
-        //     0,
-        // );
+        draw_sprite_ex(
+            texture_id("Tap"),
+            DrawTextureParams {
+                raw_draw_params: RawDrawParams {
+                    scale: vec2(0.2, 0.2),
+                    rotation: Default::default(),
+                    pivot: None,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
 
-        let abs_difference = (time::get_time().sin() - 1.0).abs();
-        self.r = abs_difference * 100.0;
-    }
-}
+        use_default_render_target();
+        
+        use_shader(shader_id);
 
-#[async_trait]
-impl GameLoop for MyGame {
-    async fn start(&mut self) {
-        clear_background(BLACK);
+        // var<uniform> power: f32;
+        // var<uniform> rate: f32;
+        // var<uniform> speed: f32;
+        // var<uniform> blockCount: f32;
+        // var<uniform> colorRate: f32;
 
-        let base_camera = BaseCamera::new(vec3(0.0, 0.0, -100.), 0.01, 10000.0);
-        let main_camera = Camera2D::new(base_camera, 540.0);
-        set_camera(main_camera);
-    }
+        set_uniform("power", Uniform::F32(OrderedFloat::<f32>(0.03)));
+        set_uniform("rate", Uniform::F32(OrderedFloat::<f32>(0.6)));
+        set_uniform("speed", Uniform::F32(OrderedFloat::<f32>(5.0)));
+        set_uniform("blockCount", Uniform::F32(OrderedFloat::<f32>(30.5)));
+        set_uniform("colorRate", Uniform::F32(OrderedFloat::<f32>(0.01)));
 
-    async fn update(&mut self) {
-        self.line().await;
+        draw_sprite_ex(
+            TextureHandle::RenderTarget(render_target_id),
+            DrawTextureParams {
+                raw_draw_params: RawDrawParams { 
+                    dest_size: Some(uvec2(1280, 720)),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+
+        use_default_shader();
     }
 }
