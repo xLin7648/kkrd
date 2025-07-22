@@ -28,15 +28,17 @@ pub fn create_render_target(
             depth_or_array_layers: 1,
         };
 
+        let format = *DEFAULT_TEXTURE_FORMAT.get().unwrap();
+
         let texture = c.device.create_texture(&TextureDescriptor {
             label: Some(&params.label),
             size,
             mip_level_count: 1,
-            sample_count: get_run_time_context().read().sample_count.into(),
+            sample_count: 1,
             dimension: TextureDimension::D2,
-            format: *DEFAULT_TEXTURE_FORMAT.get().unwrap(),
+            format,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
+            view_formats: &[format],
         });
 
         let view = texture.create_view(&TextureViewDescriptor {
@@ -115,7 +117,6 @@ pub fn ensure_pipeline_exists(
     context: &mut WgpuRenderer,
     pass_data: &MeshDrawData,
     sprite_shader_id: ShaderId,
-
     sample_count: u32
 ) -> String {
     let shaders = context.shaders.lock();
@@ -132,7 +133,7 @@ pub fn ensure_pipeline_exists(
     };
 
     let name = format!(
-        "{} {:?} {:?} {:?}",
+        "{} {:?} {:?} {:?} {:?}",
         if maybe_shader_instance_id.0 > 0 {
             "USER(Mesh)"
         } else {
@@ -140,7 +141,8 @@ pub fn ensure_pipeline_exists(
         },
         pass_data.blend_mode,
         maybe_shader,
-        context.enable_z_buffer
+        context.enable_z_buffer,
+        sample_count
     );
 
     let mesh_pipeline = if let Some(shader) = maybe_shader {

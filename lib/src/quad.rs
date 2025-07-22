@@ -171,7 +171,12 @@ pub fn draw_sprite_ex(texture: TextureHandle, params: DrawTextureParams) {
         })
     }
 
-    let vertices = rotated_rectangle(params.scroll_offset, &params.raw_draw_params);
+    let is_rt = match texture {
+        TextureHandle::RenderTarget(_) => true,
+        _ => false,
+    };
+
+    let vertices = rotated_rectangle(params.scroll_offset, &params.raw_draw_params, is_rt);
 
     const QUAD_INDICES_U32: &[u32] = &[0, 1, 2, 0, 2, 3];
 
@@ -262,28 +267,22 @@ impl Default for Rotation {
     }
 }
 
-pub fn rotated_rectangle(scroll_offset: Vec2, params: &RawDrawParams) -> [SpriteVertex; 4] {
+pub fn rotated_rectangle(
+    scroll_offset: Vec2,
+    params: &RawDrawParams,
+    is_rt: bool,
+) -> [SpriteVertex; 4] {
     // 处理目标尺寸和翻转
     let (mut scale_w, mut scale_h) = {
         let scale = params.scale;
         let wh = params.dest_size.unwrap_or(UVec2::ONE);
         (wh.x as f32 * scale.x, wh.y as f32 * scale.y)
     };
-    if params.flip_x {
-        scale_w = -scale_w;
-    }
-    if params.flip_y {
-        scale_h = -scale_h;
-    }
-
-    // 计算实际尺寸（考虑翻转）
-    let abs_w = scale_w.abs();
-    let abs_h = scale_h.abs();
 
     // 计算 pivot 偏移（Unity 风格，0-1 范围）
     let pivot_offset = match params.pivot {
-        Some(p) => vec3(p.x * abs_w, p.y * abs_h, 0.0),
-        None => vec3(abs_w / 2.0, abs_h / 2.0, 0.0),
+        Some(p) => vec3(p.x * scale_w, p.y * scale_h, 0.0),
+        None => vec3(scale_w / 2.0, scale_h / 2.0, 0.0),
     };
 
     // 获取旋转角度（支持XYZ三轴）
@@ -349,12 +348,22 @@ pub fn rotated_rectangle(scroll_offset: Vec2, params: &RawDrawParams) -> [Sprite
         rotated + params.position
     });
 
-    let tex_coords: [Vec2; 4] = [
-        scroll_offset,
-        scroll_offset + vec2(0.0, 1.0),
-        scroll_offset + vec2(1.0, 1.0),
-        scroll_offset + vec2(1.0, 0.0),
-    ];
+    let tex_coords: [Vec2; 4] = if is_rt {
+        // RT 默认 Y 向上，所以要翻转 UV
+        [
+            scroll_offset + tex_coord_flip(vec2(0.0, 1.0), params), // 左下 -> 左上
+            scroll_offset + tex_coord_flip(vec2(0.0, 0.0), params), // 左上 -> 左下
+            scroll_offset + tex_coord_flip(vec2(1.0, 0.0), params), // 右上 -> 右下
+            scroll_offset + tex_coord_flip(vec2(1.0, 1.0), params), // 右下 -> 右上
+        ]
+    } else {
+        [
+            scroll_offset + tex_coord_flip(vec2(0.0, 0.0), params), // 左上 -> 左下
+            scroll_offset + tex_coord_flip(vec2(0.0, 1.0), params), // 左下 -> 右下
+            scroll_offset + tex_coord_flip(vec2(1.0, 1.0), params), // 右下 -> 右上
+            scroll_offset + tex_coord_flip(vec2(1.0, 0.0), params), // 右上 -> 左上
+        ]
+    };
 
     // 创建最终顶点
     [
@@ -363,4 +372,24 @@ pub fn rotated_rectangle(scroll_offset: Vec2, params: &RawDrawParams) -> [Sprite
         SpriteVertex::new(world_vertices[2], tex_coords[2], params.color),
         SpriteVertex::new(world_vertices[3], tex_coords[3], params.color),
     ]
+}
+
+pub fn tex_coord_flip(mut xy: Vec2, params: &RawDrawParams) -> Vec2 {
+    fn flip(v: f32) -> f32 {
+        if v == 0.0 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    if params.flip_x {
+        xy.x = flip(xy.x);
+    }
+
+    if params.flip_y {
+        xy.y = flip(xy.y);
+    }
+
+    xy
 }

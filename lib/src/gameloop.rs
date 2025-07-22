@@ -43,7 +43,7 @@ impl GameLoop for MyGame {
             DrawTextureParams {
                 raw_draw_params: RawDrawParams {
                     position: vec3(200.0, 200.0, 0.0),
-                    scale: vec2(0.2, 0.2),
+                    scale: vec2(0.5, 0.5),
                     rotation: Default::default(),
                     pivot: None,
                     ..Default::default()
@@ -56,7 +56,7 @@ impl GameLoop for MyGame {
             texture_id("Tap"),
             DrawTextureParams {
                 raw_draw_params: RawDrawParams {
-                    scale: vec2(0.2, 0.2),
+                    scale: vec2(0.5, 0.5),
                     rotation: Default::default(),
                     pivot: None,
                     ..Default::default()
@@ -69,12 +69,6 @@ impl GameLoop for MyGame {
         
         use_shader(shader_id);
 
-        // var<uniform> power: f32;
-        // var<uniform> rate: f32;
-        // var<uniform> speed: f32;
-        // var<uniform> blockCount: f32;
-        // var<uniform> colorRate: f32;
-
         set_uniform("power", Uniform::F32(OrderedFloat::<f32>(0.03)));
         set_uniform("rate", Uniform::F32(OrderedFloat::<f32>(0.6)));
         set_uniform("speed", Uniform::F32(OrderedFloat::<f32>(5.0)));
@@ -85,7 +79,10 @@ impl GameLoop for MyGame {
             TextureHandle::RenderTarget(render_target_id),
             DrawTextureParams {
                 raw_draw_params: RawDrawParams { 
+                    position: Vec3::ZERO,
+                    rotation: Rotation::Zero,
                     dest_size: Some(uvec2(1280, 720)),
+                    pivot: None,
                     ..Default::default()
                 },
                 ..Default::default()

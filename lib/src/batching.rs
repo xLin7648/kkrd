@@ -1,4 +1,6 @@
-use wgpu::{IndexFormat, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp, TextureView};
+use wgpu::{
+    IndexFormat, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp, TextureView,
+};
 
 use crate::*;
 
@@ -8,7 +10,7 @@ pub fn run_batched_render_passes(
     clear_color: Color,
     sprite_shader_id: ShaderId,
     error_shader_id: ShaderId,
-    default_surface: &TextureView
+    default_surface: &TextureView,
 ) {
     let mut is_first = true;
 
@@ -34,7 +36,7 @@ pub fn run_batched_render_passes(
             sprite_shader_id,
             error_shader_id,
             default_surface,
-            is_first
+            is_first,
         );
 
         is_first = false;
@@ -51,7 +53,15 @@ pub fn render_meshes(
     default_surface: &TextureView,
     is_first: bool,
 ) {
-    let pipeline_name = ensure_pipeline_exists(context, &pass_data, sprite_shader_id, sample_count.into());
+    let pipeline_name = if pass_data.render_target.0 > 0 {
+        ensure_pipeline_exists(context, &pass_data, sprite_shader_id, 1)
+    } else {
+        if sample_count != Msaa::Off {
+            ensure_pipeline_exists(context, &pass_data, sprite_shader_id, sample_count.into())
+        } else {
+            ensure_pipeline_exists(context, &pass_data, sprite_shader_id, 1)
+        }
+    };
 
     let tex_handle = pass_data.texture;
 
@@ -82,13 +92,7 @@ pub fn render_meshes(
     let mut encoder = context.context.device.simple_encoder("Mesh Render Encoder");
 
     {
-        let clear_color = color_to_clear_op(
-            if is_first { 
-                Some(clear_color) 
-            } else { 
-                None 
-            }
-        );
+        let clear_color = color_to_clear_op(if is_first { Some(clear_color) } else { None });
 
         let target_view = if pass_data.render_target.0 > 0 {
             &render_targets
@@ -97,9 +101,21 @@ pub fn render_meshes(
                 .view
         } else {
             if sample_count != Msaa::Off {
-                &context.msaa_texture.0
+                &context.msaa_texture
             } else {
                 default_surface
+            }
+        };
+
+        // TODO: 如果使用RT，那么深度附件的尺寸需和RT尺寸保持一致
+        // 否则调整窗口大小 depth_texture 尺寸一更改就会panic
+        let depth_view = if pass_data.render_target.0 > 0 {
+            &context.depth_texture // 需要改这里
+        } else {
+            if sample_count != Msaa::Off {
+                &context.msaa_depth_texture
+            } else {
+                &context.depth_texture
             }
         };
 
@@ -115,7 +131,7 @@ pub fn render_meshes(
             })],
             depth_stencil_attachment: depth_stencil_attachment(
                 context.enable_z_buffer,
-                &context.depth_texture.view,
+                depth_view,
                 is_first,
             ),
             timestamp_writes: None,
@@ -126,7 +142,12 @@ pub fn render_meshes(
             .user_pipelines
             .get(&pipeline_name)
             .map(RenderPipeline::User)
-            .or_else(|| context.pipelines.get(&pipeline_name).map(RenderPipeline::Wgpu))
+            .or_else(|| {
+                context
+                    .pipelines
+                    .get(&pipeline_name)
+                    .map(RenderPipeline::Wgpu)
+            })
             .expect("ensured pipeline must exist within the same frame");
 
         match &mesh_pipeline {
@@ -178,5 +199,8 @@ pub fn render_meshes(
         }
     }
 
-    context.context.queue.submit(std::iter::once(encoder.finish()));
+    context
+        .context
+        .queue
+        .submit(std::iter::once(encoder.finish()));
 }

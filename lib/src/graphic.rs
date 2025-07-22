@@ -101,17 +101,19 @@ pub struct WgpuRenderer {
 
     pub textures: Arc<Mutex<TextureMap>>,
     pub texture_layout: Arc<BindGroupLayout>,
-    pub depth_texture: Arc<Texture>,
-
+    
     pub sprite_shader_id: ShaderId,
     pub error_shader_id: ShaderId,
-
+    
     pub size: PhysicalSize<u32>,
     pub camera_uniform: CameraUniform,
     pub camera_buffer: Buffer,
     pub camera_bind_group: Arc<BindGroup>,
     pub camera_bind_group_layout: BindGroupLayout,
-    pub msaa_texture: (TextureView, Option<TextureView>)
+
+    pub msaa_texture: TextureView,
+    pub msaa_depth_texture: TextureView,
+    pub depth_texture: TextureView,
 }
 
 impl WgpuRenderer {
@@ -136,6 +138,14 @@ impl WgpuRenderer {
                 &context,
                 "Tap",
                 include_bytes!("assets/Tap2.png"),
+                textures,
+                AddressMode::Repeat,
+            );
+
+            load_texture_from_engine_bytes(
+                &context,
+                "1",
+                include_bytes!("assets/1.png"),
                 textures,
                 AddressMode::Repeat,
             );
@@ -224,10 +234,15 @@ impl WgpuRenderer {
         let bind = get_run_time_context();
         let run_time_context = bind.read();
 
-        let depth_texture = Texture::create_depth_texture(
+        let depth_texture = create_multisampled_depth(
             &context.device,
             &context.config.read(),
-            "Depth Texture",
+            1
+        );
+
+        let msaa_depth_texture = create_multisampled_depth(
+            &context.device,
+            &context.config.read(),
             run_time_context.sample_count.into()
         );
 
@@ -258,13 +273,14 @@ impl WgpuRenderer {
             sprite_shader_id,
             error_shader_id,
 
-            depth_texture: Arc::new(depth_texture),
             textures: context.textures.clone(),
             texture_layout: context.texture_layout.clone(),
 
             context,
 
-            msaa_texture
+            depth_texture,
+            msaa_texture,
+            msaa_depth_texture,
         };
 
         renderer
@@ -309,12 +325,17 @@ impl WgpuRenderer {
             sample_count,
         );
 
-        self.depth_texture = Arc::new(Texture::create_depth_texture(
+        self.depth_texture = create_multisampled_depth(
             &self.context.device,
             &self.context.config.read(),
-            "Depth Texture",
+            1
+        );
+
+        self.msaa_depth_texture = create_multisampled_depth(
+            &self.context.device,
+            &self.context.config.read(),
             sample_count
-        ));
+        );
     }
 
     pub(crate) fn update(&mut self) {
@@ -377,7 +398,7 @@ impl WgpuRenderer {
             encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("MSAA Resolve Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &self.msaa_texture.0,
+                    view: &self.msaa_texture,
                     resolve_target: Some(&surface_view),
                     ops: Operations {
                         load: LoadOp::Load,
@@ -385,7 +406,7 @@ impl WgpuRenderer {
                     },
                 })],
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-                    view: &self.msaa_texture.1.as_ref().unwrap(), // MSAA 深度附件
+                    view: &self.msaa_depth_texture, // MSAA 深度附件
                     depth_ops: Some(Operations {
                         load: LoadOp::Clear(1.0),
                         store: StoreOp::Store,

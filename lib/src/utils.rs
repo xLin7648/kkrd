@@ -427,11 +427,36 @@ pub fn color_to_clear_op(color: Option<Color>) -> LoadOp<wgpu::Color> {
     }
 }
 
+
+
+pub fn create_multisampled_depth(
+    device: &Device,
+    config: &SurfaceConfiguration,
+    sample_count: u32,
+) -> TextureView {
+    let depth_texture = device.create_texture(&TextureDescriptor {
+        label: Some("Multisampled Depth Attachment"),
+        size: Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth32Float, // 或 Depth24Plus
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+
+    depth_texture.create_view(&TextureViewDescriptor::default())
+}
+
 pub fn create_multisampled_framebuffer(
     device: &Device,
     config: &SurfaceConfiguration,
     sample_count: u32,
-) -> (TextureView, Option<TextureView>) {
+) -> TextureView {
     // 1. 优先选择移动端兼容格式
     let format = config.format;
 
@@ -451,27 +476,7 @@ pub fn create_multisampled_framebuffer(
         view_formats: &[format], // 关键修复：声明视图格式
     });
 
-    // 3. 创建 MSAA 深度纹理（移动端必需）
-    let depth_texture = device.create_texture(&TextureDescriptor {
-        label: Some("Multisampled Depth Attachment"),
-        size: Extent3d {
-            width: config.width,
-            height: config.height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count,
-        dimension: TextureDimension::D2,
-        format: TextureFormat::Depth32Float, // 或 Depth24Plus
-        usage: TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    });
-
-    // 4. 返回视图
-    (
-        color_texture.create_view(&TextureViewDescriptor::default()),
-        Some(depth_texture.create_view(&TextureViewDescriptor::default())),
-    )
+    color_texture.create_view(&TextureViewDescriptor::default())
 }
 
 pub fn is_mobile() -> bool {

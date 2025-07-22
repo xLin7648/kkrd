@@ -23,6 +23,7 @@ use wgpu::TextureUsages;
 use wgpu::TextureView;
 use wgpu::TextureViewDescriptor;
 
+use crate::config::get_run_time_context;
 use crate::DEFAULT_TEXTURE_FORMAT;
 use crate::utils::DeviceExtensions;
 
