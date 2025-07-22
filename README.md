@@ -4,7 +4,7 @@
 * [x] 帧率限制
 * [x] 合批
 * [x] Shader、图像导入
-* [x] Msaa
+* [x] MSAA抗锯齿
 
 * [ ] Bloom
 * [x] Post-processing
