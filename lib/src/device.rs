@@ -8,7 +8,7 @@ use crate::*;
 pub async fn create_graphics_context(window: Arc<Window>) -> GraphicsContext {
     let size = window.inner_size();
 
-    let default_backends = Backends::all();
+    let default_backends = Backends::VULKAN;
 
     let instance = Instance::new(&InstanceDescriptor {
         backends: default_backends,

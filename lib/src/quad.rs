@@ -273,7 +273,7 @@ pub fn rotated_rectangle(
     is_rt: bool,
 ) -> [SpriteVertex; 4] {
     // 处理目标尺寸和翻转
-    let (mut scale_w, mut scale_h) = {
+    let (scale_w, scale_h) = {
         let scale = params.scale;
         let wh = params.dest_size.unwrap_or(UVec2::ONE);
         (wh.x as f32 * scale.x, wh.y as f32 * scale.y)

@@ -38,7 +38,7 @@ pub fn init_game(
         use winit::platform::windows::EventLoopBuilderExtWindows;
 
         env_logger::builder()
-            .filter_level(LevelFilter::Info) // 默认日志级别
+            .filter_level(LevelFilter::Trace) // 默认日志级别
             .parse_default_env()
             .init();
 
@@ -125,6 +125,11 @@ pub fn init_game(
 
             #[cfg(any(target_os = "windows", target_os = "macos"))]
             framerate_limiter();
+
+            info!("-------------新的一帧-------------");
+
+            // event_loop_proxy.send_event(WinitMessage::Exit);
+            // return;
         }
     });
 
@@ -197,8 +202,6 @@ impl ApplicationHandler<WinitMessage> for App {
                 if let Err(_) = tx.send(self.window.is_some() && get_global_wgpu().is_some()) {
                     warn!("Failed to send check init");
                 }
-
-                info!("{}", get_global_wgpu().is_some());
             }
             WinitMessage::RenderFrame(completion_tx) => {
                 self.renderer_update();
@@ -222,9 +225,7 @@ impl ApplicationHandler<WinitMessage> for App {
         } else {
             // 从桌面回来不会执行
             self.init_window(event_loop);
-            let _ = WGPU_RENDERER.set(Arc::new(Mutex::new(
-                WgpuRenderer::new(self.window.clone().unwrap()).block_on(),
-            )));
+            WgpuRenderer::new(self.window.clone().unwrap()).block_on();
         }
     }
 

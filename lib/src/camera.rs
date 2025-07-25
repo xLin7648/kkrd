@@ -8,8 +8,6 @@ pub trait Camera: Send + Sync + Debug {
     fn set_position(&mut self, position: Vec3);
     fn set_rotation(&mut self, rotation: Quat);
     fn set_rotation_angle(&mut self, angle: Vec3);
-    fn world_to_screen(&self, world_position: Vec3) -> Vec2;
-    fn screen_to_world(&self, screen_position: Vec2) -> Vec3;
 }
 
 #[derive(Debug)]
@@ -122,36 +120,6 @@ impl Camera for Camera3D {
     fn set_position(&mut self, position: Vec3) {
         self.base.set_position(position);
     }
-
-    fn world_to_screen(&self, world_position: Vec3) -> Vec2 {
-        let view_proj = self.matrix();
-        let clip_space_position = view_proj * world_position.extend(1.0); // 转换为裁剪空间
-        
-        // 将裁剪空间转换为 NDC
-        let ndc_x = clip_space_position.x / clip_space_position.w;
-        let ndc_y = clip_space_position.y / clip_space_position.w;
-
-        // 将 NDC 转换为屏幕坐标
-        let screen_x = (ndc_x * 0.5 + 0.5) * self.base.viewport_width;
-        let screen_y = (ndc_y * 0.5 + 0.5) * self.base.viewport_height;
-
-        vec2(screen_x, self.base.viewport_height - screen_y) // Y轴翻转
-    }
-
-    fn screen_to_world(&self, screen_position: Vec2) -> Vec3 {
-        // 将屏幕坐标转换为 NDC
-        let ndc_x = (screen_position.x / self.base.viewport_width) * 2.0 - 1.0;
-        let ndc_y = (screen_position.y / self.base.viewport_height) * 2.0 - 1.0;
-
-        // 创建裁剪空间位置
-        let clip_space_position = vec4(ndc_x, ndc_y, -1.0, 1.0); // Z 设置为 -1
-
-        // 计算逆视图投影矩阵
-        let view_proj_inverse = self.matrix().inverse();
-        let world_position = view_proj_inverse * clip_space_position;
-
-        world_position.truncate() // 丢弃 w 组件
-    }
 }
 
 #[derive(Debug)]
@@ -210,31 +178,6 @@ impl Camera for Camera2D {
 
     fn set_rotation_angle(&mut self, angle: Vec3) {
         self.base.set_rotation_angle(angle); // 调用 BaseCamera 的方法
-    }
-
-    fn world_to_screen(&self, world_position: Vec3) -> Vec2 {
-        let view_proj = self.matrix();
-        let clip_space_position = view_proj * world_position.extend(1.0); // 转换为裁剪空间
-        let ndc_x = clip_space_position.x / clip_space_position.w;
-        let ndc_y = clip_space_position.y / clip_space_position.w;
-
-        // 将 NDC 转换为屏幕坐标
-        let screen_x = (ndc_x * 0.5 + 0.5) * self.rect.w; // 使用 rect 的宽度
-        let screen_y = (ndc_y * 0.5 + 0.5) * self.rect.h; // 使用 rect 的高度
-
-        vec2(screen_x, self.rect.h - screen_y) // Y轴翻转
-    }
-
-    fn screen_to_world(&self, screen_position: Vec2) -> Vec3 {
-        let ndc_x = (screen_position.x / self.rect.w) * 2.0 - 1.0;
-        let ndc_y = (screen_position.y / self.rect.h) * 2.0 - 1.0;
-
-        let clip_space_position = vec4(ndc_x, ndc_y, -1.0, 1.0); // Z 设置为 -1
-
-        let view_proj_inverse = self.matrix().inverse();
-        let world_position = view_proj_inverse * clip_space_position;
-
-        world_position.truncate() // 丢弃 w 组件
     }
 }
 

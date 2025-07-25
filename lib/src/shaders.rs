@@ -88,7 +88,6 @@ static CURRENT_RENDER_TARGET: AtomicU32 = AtomicU32::new(0);
 
 pub fn use_render_target(id: RenderTargetId) {
     CURRENT_RENDER_TARGET.store(id.0, Ordering::SeqCst);
-    // *CURRENT_RENDER_TARGET.borrow_mut() = Some(id);
 }
 
 pub fn use_default_render_target() {

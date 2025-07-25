@@ -87,6 +87,7 @@ impl Default for WindowConfig {
     }
 }
 
+#[derive(Clone)]
 pub struct RunTimeContext {
     pub target_frame_rate: Option<u32>,
     pub sample_count: Msaa,

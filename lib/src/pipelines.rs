@@ -1,8 +1,13 @@
-use wgpu::{AddressMode, BindingResource, BufferDescriptor, Extent3d, FilterMode, Sampler, SamplerDescriptor, TextureAspect, TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor};
+use parking_lot::lock_api::Mutex;
+use wgpu::{
+    AddressMode, BindingResource, BufferDescriptor, Extent3d, FilterMode, Sampler,
+    SamplerDescriptor, TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
+    TextureView, TextureViewDescriptor,
+};
 
 use crate::*;
 
-static GENERATED_RENDER_TARGET_IDS: AtomicU32 = AtomicU32::new(1);
+static GENERATED_RENDER_TARGET_IDS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Debug)]
 pub struct RenderTargetParams {
@@ -11,99 +16,158 @@ pub struct RenderTargetParams {
     pub filter_mode: FilterMode,
 }
 
-/// Creates a new render target with given dimensions. Among other parameters a label is
-/// required so that graphic debuggers like RenderDoc can display its name properly.
-pub fn create_render_target(
-    params: &RenderTargetParams,
-) -> RenderTargetId {
-    let id = gen_render_target();
+#[derive(Debug)]
+pub(crate) struct UserRenderTarget {
+    // pub color_texture: wgpu::Texture,
+    // pub color_view: wgpu::TextureView,
 
-    if let Some(wr) = get_global_wgpu() {
-        let wr = wr.lock();
-        let c = &wr.context;
+    // MSAA 专用
+    pub msaa_texture: wgpu::Texture,
+    pub msaa_view: wgpu::TextureView,
+    pub msaa_depth_texture: wgpu::Texture,
+    pub msaa_depth_view: wgpu::TextureView,
 
+    // 真正拿来采样 / blit 的纹理
+    pub resolve_texture: wgpu::Texture,
+    pub resolve_view: wgpu::TextureView,
+
+    // 采样 resolve_texture 用的 bind_group
+    pub blit_bind_group: wgpu::BindGroup,
+}
+
+impl UserRenderTarget {
+    pub fn new(params: &RenderTargetParams) -> RenderTargetId {
+        let id = gen_render_target();
+
+        if let Some(wr) = get_global_wgpu() {
+            let wr = wr.lock();
+
+            // 5. 插入全局表
+            wr.render_targets.lock().insert(
+                id,
+                Arc::new(Mutex::new(Self::create_resources(
+                    &wr.context,
+                    &wr.texture_layout,
+                    params,
+                ))),
+            );
+
+            id
+        } else {
+            panic!("Wgpu Renderer Not Init");
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        c: &GraphicsContext,
+        texture_layout: &BindGroupLayout,
+        params: &RenderTargetParams,
+    ) {
+        let resources = Self::create_resources(c, texture_layout, params);
+
+        // self.color_texture = resources.color_texture;
+        // self.color_view = resources.color_view;
+
+        self.msaa_texture = resources.msaa_texture;
+        self.msaa_view = resources.msaa_view;
+        self.msaa_depth_texture = resources.msaa_depth_texture;
+
+        self.resolve_texture = resources.resolve_texture;
+        self.resolve_view = resources.resolve_view;
+
+        self.blit_bind_group = resources.blit_bind_group;
+    }
+
+    fn create_resources(
+        c: &GraphicsContext,
+        texture_layout: &BindGroupLayout,
+        params: &RenderTargetParams,
+    ) -> UserRenderTarget {
         let size = Extent3d {
             width: params.size.x,
             height: params.size.y,
             depth_or_array_layers: 1,
         };
 
+        // 由外部决定 1 或 4/8
+        let sample_count = get_run_time_context().read().sample_count.into();
         let format = *DEFAULT_TEXTURE_FORMAT.get().unwrap();
+        let label = params.label.as_str();
 
-        let texture = c.device.create_texture(&TextureDescriptor {
-            label: Some(&params.label),
+        // 1) MSAA 颜色纹理
+        let msaa_texture = c.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(&format!("{label}_msaa_color")),
+            size,
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[format],
+        });
+        let msaa_view = msaa_texture.create_view(&Default::default());
+
+        // 2) MSAA 深度纹理
+        let msaa_depth_texture = c.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(&format!("{label}_msaa_depth")),
+            size,
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let msaa_depth_view = msaa_depth_texture.create_view(&Default::default());
+
+        // 3) 1-sample resolve 纹理（真正拿来采样 / blit）
+        let resolve_texture = c.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(&format!("{label}_resolve")),
             size,
             mip_level_count: 1,
             sample_count: 1,
-            dimension: TextureDimension::D2,
+            dimension: wgpu::TextureDimension::D2,
             format,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[format],
         });
+        let resolve_view = resolve_texture.create_view(&Default::default());
 
-        let view = texture.create_view(&TextureViewDescriptor {
-            label: Some(&format!("{} View", params.label)),
-            format: None,
-            dimension: None,
-            aspect: TextureAspect::All,
-            base_mip_level: 0,
-            mip_level_count: None,
-            base_array_layer: 0,
-            array_layer_count: None,
-            ..Default::default()
-        });
-
-        let sampler = c.device.create_sampler(&SamplerDescriptor {
-            label: Some(&format!("{} Sampler", params.label)),
-            address_mode_u: AddressMode::ClampToEdge,
-            address_mode_v: AddressMode::ClampToEdge,
-            address_mode_w: AddressMode::ClampToEdge,
+        // 4) 采样器 + blit bind_group
+        let sampler = c.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some(&format!("{label}_sampler")),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
             mag_filter: params.filter_mode,
             min_filter: params.filter_mode,
-            mipmap_filter: params.filter_mode,
             ..Default::default()
         });
-
-        let bind_group = c.device.create_bind_group(&BindGroupDescriptor {
-            label: Some(&format!("{} Bind Group", params.label)),
-            layout: &c.texture_layout,
+        let blit_bind_group = c.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("{label}_blit_bind_group")),
+            layout: texture_layout,
             entries: &[
-                BindGroupEntry {
+                wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&view),
+                    resource: wgpu::BindingResource::TextureView(&resolve_view),
                 },
-                BindGroupEntry {
+                wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::Sampler(&sampler),
+                    resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
         });
 
-        wr.render_targets.lock().insert(
-            id,
-            UserRenderTarget {
-                creation_params: params.clone(),
-                texture,
-                view,
-                sampler,
-                bind_group,
-            },
-        );
-
-        id
-    } else {
-        panic!("Wgpu Renderer Not Init");
+        UserRenderTarget {
+            msaa_texture,
+            msaa_view,
+            msaa_depth_texture,
+            msaa_depth_view,
+            resolve_texture,
+            resolve_view,
+            blit_bind_group,
+        }
     }
-
-    
-}
-
-pub struct UserRenderTarget {
-    pub creation_params: RenderTargetParams,
-    pub texture: wgpu::Texture,
-    pub view: TextureView,
-    pub sampler: Sampler,
-    pub bind_group: BindGroup,
 }
 
 /// Allocates a new render target id
@@ -117,7 +181,7 @@ pub fn ensure_pipeline_exists(
     context: &mut WgpuRenderer,
     pass_data: &MeshDrawData,
     sprite_shader_id: ShaderId,
-    sample_count: u32
+    sample_count: u32,
 ) -> String {
     let shaders = context.shaders.lock();
 
@@ -133,7 +197,7 @@ pub fn ensure_pipeline_exists(
     };
 
     let name = format!(
-        "{} {:?} {:?} {:?} {:?}",
+        "{} {:?} {:?} {:?}",
         if maybe_shader_instance_id.0 > 0 {
             "USER(Mesh)"
         } else {
@@ -141,23 +205,27 @@ pub fn ensure_pipeline_exists(
         },
         pass_data.blend_mode,
         maybe_shader,
-        context.enable_z_buffer,
-        sample_count
+        context.enable_z_buffer
     );
 
     let mesh_pipeline = if let Some(shader) = maybe_shader {
-        RenderPipeline::User(context.user_pipelines.entry(name.clone()).or_insert_with(|| {
-            create_user_pipeline(
-                &name,
-                pass_data,
-                shader,
-                &context.context,
-                &context.texture_layout,
-                &context.camera_bind_group_layout,
-                context.enable_z_buffer,
-                sample_count
-            )
-        }))
+        RenderPipeline::User(
+            context
+                .user_pipelines
+                .entry(name.clone())
+                .or_insert_with(|| {
+                    create_user_pipeline(
+                        &name,
+                        pass_data,
+                        shader,
+                        &context.context,
+                        &context.texture_layout,
+                        &context.camera_bind_group_layout,
+                        context.enable_z_buffer,
+                        sample_count,
+                    )
+                }),
+        )
     } else {
         RenderPipeline::Wgpu(context.pipelines.entry(name.clone()).or_insert_with(|| {
             create_render_pipeline_with_layout(
@@ -169,7 +237,7 @@ pub fn ensure_pipeline_exists(
                 shaders.get(sprite_shader_id).unwrap(),
                 pass_data.blend_mode,
                 context.enable_z_buffer,
-                sample_count
+                sample_count,
             )
             .unwrap()
         }))
@@ -217,7 +285,7 @@ pub fn ensure_pipeline_exists(
                             );
                         }
                     }
-                } 
+                }
                 // 使用shader定义的默认值
                 else if let Some(uniform_def) = shader.uniform_defs.get(buffer_name) {
                     match uniform_def {
@@ -273,7 +341,7 @@ pub fn create_user_pipeline(
     texture_layout: &Arc<BindGroupLayout>,
     camera_bind_group_layout: &BindGroupLayout,
     enable_z_buffer: bool,
-    sample_count: u32
+    sample_count: u32,
 ) -> UserRenderPipeline {
     info!("Creating pipeline for shader: {:?}", shader.id);
 
@@ -301,16 +369,13 @@ pub fn create_user_pipeline(
             UniformDef::F32(maybe_default) => {
                 let size = std::mem::size_of::<f32>() as u64;
                 if let Some(value) = maybe_default {
-                    let buffer = context.device.create_buffer_init(
-                        &util::BufferInitDescriptor {
-                            label: Some(&format!(
-                                "User UB: {} (default={})",
-                                uniform_name, value
-                            )),
+                    let buffer = context
+                        .device
+                        .create_buffer_init(&util::BufferInitDescriptor {
+                            label: Some(&format!("User UB: {} (default={})", uniform_name, value)),
                             contents: bytemuck::cast_slice(&[*value]),
                             usage: uniform_buffer_usage,
-                        }
-                    );
+                        });
                     buffers.insert(uniform_name.to_string(), buffer);
                 } else {
                     let buffer = context.device.create_buffer(&BufferDescriptor {
@@ -326,16 +391,16 @@ pub fn create_user_pipeline(
                 let size = std::mem::size_of::<[f32; 2]>() as u64;
                 if let Some((x, y)) = maybe_default {
                     let data = [*x, *y];
-                    let buffer = context.device.create_buffer_init(
-                        &util::BufferInitDescriptor {
+                    let buffer = context
+                        .device
+                        .create_buffer_init(&util::BufferInitDescriptor {
                             label: Some(&format!(
                                 "User UB: {} (default=({}, {}))",
                                 uniform_name, x, y
                             )),
                             contents: bytemuck::cast_slice(&data),
                             usage: uniform_buffer_usage,
-                        }
-                    );
+                        });
                     buffers.insert(uniform_name.to_string(), buffer);
                 } else {
                     let buffer = context.device.create_buffer(&BufferDescriptor {
@@ -351,16 +416,16 @@ pub fn create_user_pipeline(
                 let size = std::mem::size_of::<[f32; 3]>() as u64;
                 if let Some((x, y, z)) = maybe_default {
                     let data = [*x, *y, *z];
-                    let buffer = context.device.create_buffer_init(
-                        &util::BufferInitDescriptor {
+                    let buffer = context
+                        .device
+                        .create_buffer_init(&util::BufferInitDescriptor {
                             label: Some(&format!(
                                 "User UB: {} (default=({}, {}, {}))",
                                 uniform_name, x, y, z
                             )),
                             contents: bytemuck::cast_slice(&data),
                             usage: uniform_buffer_usage,
-                        }
-                    );
+                        });
                     buffers.insert(uniform_name.to_string(), buffer);
                 } else {
                     let buffer = context.device.create_buffer(&BufferDescriptor {
@@ -376,16 +441,16 @@ pub fn create_user_pipeline(
                 let size = std::mem::size_of::<[f32; 4]>() as u64;
                 if let Some((x, y, z, w)) = maybe_default {
                     let data = [*x, *y, *z, *w];
-                    let buffer = context.device.create_buffer_init(
-                        &util::BufferInitDescriptor {
+                    let buffer = context
+                        .device
+                        .create_buffer_init(&util::BufferInitDescriptor {
                             label: Some(&format!(
                                 "User UB: {} (default=({}, {}, {}, {}))",
                                 uniform_name, x, y, z, w
                             )),
                             contents: bytemuck::cast_slice(&data),
                             usage: uniform_buffer_usage,
-                        }
-                    );
+                        });
                     buffers.insert(uniform_name.to_string(), buffer);
                 } else {
                     let buffer = context.device.create_buffer(&BufferDescriptor {
@@ -423,17 +488,15 @@ pub fn create_user_pipeline(
         shader,
         pass_data.blend_mode,
         enable_z_buffer,
-        sample_count
+        sample_count,
     )
     .unwrap();
 
-    let bind_group = context
-        .device
-        .create_bind_group(&BindGroupDescriptor {
-            label: Some("User Bind Group"),
-            layout: &user_layout,
-            entries: &bind_group_entries,
-        });
+    let bind_group = context.device.create_bind_group(&BindGroupDescriptor {
+        label: Some("User Bind Group"),
+        layout: &user_layout,
+        entries: &bind_group_entries,
+    });
 
     UserRenderPipeline {
         pipeline,

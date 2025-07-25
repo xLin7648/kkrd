@@ -25,9 +25,9 @@ impl GameLoop for MyGame {
         self.glitch_shader_id =
             Some(create_shader("glitch", &include_str!("shaders/glitch.wgsl")).unwrap());
 
-        self.my_render_target = Some(create_render_target(&RenderTargetParams {
+        self.my_render_target = Some(UserRenderTarget::new(&RenderTargetParams {
             label: "my-render-target".to_string(),
-            size: uvec2(1280, 720),
+            size: uvec2(640, 360),
             filter_mode: wgpu::FilterMode::Nearest,
         }));
     }
@@ -52,6 +52,8 @@ impl GameLoop for MyGame {
             },
         );
 
+        clear_background(BLUE);
+
         draw_sprite_ex(
             texture_id("Tap"),
             DrawTextureParams {
@@ -66,6 +68,8 @@ impl GameLoop for MyGame {
         );
 
         use_default_render_target();
+
+        clear_background(RED);
         
         use_shader(shader_id);
 
@@ -80,8 +84,8 @@ impl GameLoop for MyGame {
             DrawTextureParams {
                 raw_draw_params: RawDrawParams { 
                     position: Vec3::ZERO,
-                    rotation: Rotation::Zero,
-                    dest_size: Some(uvec2(1280, 720)),
+                    rotation: Rotation::Z(45.0),
+                    dest_size: Some(uvec2(640, 360)),
                     pivot: None,
                     ..Default::default()
                 },

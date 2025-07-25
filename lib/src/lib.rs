@@ -121,6 +121,12 @@ pub fn get_global_wgpu() -> Option<&'static Arc<Mutex<WgpuRenderer>>> {
 
 pub static DEFAULT_TEXTURE_FORMAT: OnceLock<TextureFormat> = OnceLock::new();
 
+pub fn clear_background(color: Color) {
+    if let Some(wr) = get_global_wgpu() {
+        wr.lock().clear(color);
+    }
+}
+
 #[cfg(target_os = "android")]
 pub static ANDROID_APP: OnceLock<winit::platform::android::activity::AndroidApp> = OnceLock::new();
 
@@ -145,7 +151,7 @@ fn main() {
 
     let run_time_context = RunTimeContext {
         target_frame_rate: Some(120),
-        sample_count: Msaa::Sample4,
+        sample_count: Msaa::Off,
         clear_color: BLACK,
         main_camera: None,
     };
