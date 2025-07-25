@@ -4,9 +4,10 @@
 * [x] 帧率限制
 * [x] 合批
 * [x] Shader、图像导入
+* [x] MSAA抗锯齿
 
 * [ ] Bloom
-* [ ] Post-processing
+* [x] Post-processing
 
 * [ ] Audio
 
@@ -15,3 +16,5 @@
 * [x] MacOS   Support
 * [ ] IOS     Support
 * [ ] Linux   Support
+
+暂时没有xcode工程
