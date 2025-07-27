@@ -151,10 +151,10 @@ fn main() {
 
     let run_time_context = RunTimeContext {
         target_frame_rate: Some(120),
-        sample_count: Msaa::Off,
+        sample_count: Msaa::Sample4,
         clear_color: BLACK,
         main_camera: None,
     };
 
-    init_game(init_game_config, run_time_context,MyGame::default());
+    init_game(init_game_config, run_time_context, MyGame::default());
 }

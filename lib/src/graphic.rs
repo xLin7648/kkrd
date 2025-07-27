@@ -99,7 +99,6 @@ pub fn create_default_rt() {
     UserRenderTarget::new(&RenderTargetParams {
         label: "Default RT".to_owned(),
         size: uvec2(size.width.max(1), size.height.max(1)),
-        filter_mode: wgpu::FilterMode::Nearest,
     });
 }
 
@@ -367,7 +366,6 @@ impl WgpuRenderer {
             &RenderTargetParams {
                 label: "Default RT".to_owned(),
                 size: uvec2(size.width.max(1), size.height.max(1)),
-                filter_mode: wgpu::FilterMode::Nearest,
             },
         )
     }

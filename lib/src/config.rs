@@ -120,9 +120,11 @@ pub fn set_clear_background_color(color: Color) {
     get_run_time_context().write().clear_color = color;
 }
 
-pub fn set_camera<T: Camera + Send + Sync + 'static>(mut camera: T) {
+pub fn set_camera<T: Camera + Send + Sync + 'static>(mut camera: T) -> Arc<RwLock<T>> {
     camera.resize(get_window_size());
-    get_run_time_context().write().main_camera = Some(Arc::new(RwLock::new(camera)));
+    let arc_cam = Arc::new(RwLock::new(camera));
+    get_run_time_context().write().main_camera = Some(arc_cam.clone());
+    arc_cam
 }
 
 pub fn get_camera() -> Option<Arc<RwLock<dyn Camera>>> {

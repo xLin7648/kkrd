@@ -38,7 +38,7 @@ pub fn init_game(
         use winit::platform::windows::EventLoopBuilderExtWindows;
 
         env_logger::builder()
-            .filter_level(LevelFilter::Trace) // 默认日志级别
+            .filter_level(LevelFilter::Info) // 默认日志级别
             .parse_default_env()
             .init();
 

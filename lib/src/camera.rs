@@ -162,8 +162,8 @@ impl Camera for Camera2D {
         // 计算宽高比
         let aspect_ratio = new_size.width as f32 / new_size.height as f32;
         // 更新正交矩形
-        self.rect.w = self.size * aspect_ratio;
-        self.rect.h = self.size;
+        self.rect.w = self.size * 2.0 * aspect_ratio;
+        self.rect.h = self.size * 2.0;
         self.rect.x = -self.rect.w / 2.0;
         self.rect.y =  self.rect.h / 2.0;
     }

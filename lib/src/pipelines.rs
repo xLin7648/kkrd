@@ -13,13 +13,12 @@ static GENERATED_RENDER_TARGET_IDS: AtomicU32 = AtomicU32::new(0);
 pub struct RenderTargetParams {
     pub label: String,
     pub size: UVec2,
-    pub filter_mode: FilterMode,
 }
 
 #[derive(Debug)]
 pub(crate) struct UserRenderTarget {
-    // pub color_texture: wgpu::Texture,
-    // pub color_view: wgpu::TextureView,
+    // RT 尺寸
+    pub size: UVec2,
 
     // MSAA 专用
     pub msaa_texture: wgpu::Texture,
@@ -66,12 +65,12 @@ impl UserRenderTarget {
     ) {
         let resources = Self::create_resources(c, texture_layout, params);
 
-        // self.color_texture = resources.color_texture;
-        // self.color_view = resources.color_view;
+        self.size = resources.size;
 
         self.msaa_texture = resources.msaa_texture;
         self.msaa_view = resources.msaa_view;
         self.msaa_depth_texture = resources.msaa_depth_texture;
+        self.msaa_depth_view = resources.msaa_depth_view;
 
         self.resolve_texture = resources.resolve_texture;
         self.resolve_view = resources.resolve_view;
@@ -139,8 +138,9 @@ impl UserRenderTarget {
             label: Some(&format!("{label}_sampler")),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: params.filter_mode,
-            min_filter: params.filter_mode,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Linear,
             ..Default::default()
         });
         let blit_bind_group = c.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -159,6 +159,7 @@ impl UserRenderTarget {
         });
 
         UserRenderTarget {
+            size: params.size,
             msaa_texture,
             msaa_view,
             msaa_depth_texture,

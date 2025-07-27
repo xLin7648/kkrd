@@ -167,7 +167,20 @@ pub fn draw_sprite_ex(texture: TextureHandle, params: DrawTextureParams) {
                     UVec2::ONE
                 }
             },
-            TextureHandle::RenderTarget(render_target_id) => return,
+            TextureHandle::RenderTarget(render_target_id) => {
+                if let Some(wr) = get_global_wgpu() {
+                    let wr = wr.lock();
+                    let rts = wr.render_targets.lock();
+
+                    if let Some(rt) = rts.get(&render_target_id) {
+                        rt.lock().size
+                    } else {
+                        return;
+                    }
+                } else {
+                    panic!("wgpu renderer not init");
+                }
+            },
         })
     }
 
