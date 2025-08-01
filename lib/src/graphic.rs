@@ -3,17 +3,15 @@ use std::default;
 use crate::*;
 
 use anyhow::Result;
+use tokio::sync::watch::error;
 use wgpu::{
-    AddressMode, BindingResource, BlendState, ColorTargetState, ColorWrites,
-    CommandEncoderDescriptor, FragmentState, LoadOp, MultisampleState, Operations, PrimitiveState,
-    RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-    ShaderModuleDescriptor, ShaderSource, StoreOp, TextureView, TextureViewDescriptor, VertexState,
+    AddressMode, BindingResource, BlendState, ColorTargetState, ColorWrites, CommandEncoderDescriptor, FragmentState, IndexFormat, LoadOp, MultisampleState, Operations, PrimitiveState, RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, ShaderModuleDescriptor, ShaderSource, StoreOp, TextureView, TextureViewDescriptor, VertexState
 };
 
 pub type PipelineMap = HashMap<String, wgpu::RenderPipeline>;
 pub type UserPipelineMap = HashMap<String, UserRenderPipeline>;
 pub type TextureMap = HashMap<TextureHandle, BindableTexture>;
-pub type RenderTargetMap = HashMap<RenderTargetId, Arc<Mutex<UserRenderTarget>>>;
+pub type RenderTargetMap = HashMap<RenderTargetId, Arc<RwLock<UserRenderTarget>>>;
 
 pub enum RenderPipeline<'a> {
     User(&'a UserRenderPipeline),
@@ -108,7 +106,6 @@ pub struct WgpuRenderer {
     pub pipelines: PipelineMap,
     pub user_pipelines: UserPipelineMap,
     pub shaders: Arc<Mutex<ShaderMap>>,
-    pub render_targets: Arc<Mutex<RenderTargetMap>>,
 
     pub vertex_buffer: SizedBuffer,
     pub index_buffer: SizedBuffer,
@@ -121,7 +118,7 @@ pub struct WgpuRenderer {
     pub sprite_shader_id: ShaderId,
     pub error_shader_id: ShaderId,
 
-    pub size: PhysicalSize<u32>,
+    pub size: UVec2,
     pub camera_uniform: CameraUniform,
     pub camera_buffer: Buffer,
     pub camera_bind_group: Arc<BindGroup>,
@@ -232,7 +229,9 @@ impl WgpuRenderer {
         let error_shader_id =
             create_shader1(&mut shaders, "error", &include_str!("shaders/error.wgsl")).unwrap();
 
-        let _ = WGPU_RENDERER.set(Arc::new(Mutex::new(Self {
+        let size = uvec2(size.width.max(1), size.height.max(1));
+
+        let wr = Arc::new(RwLock::new(Self {
             size,
 
             camera_buffer,
@@ -244,7 +243,6 @@ impl WgpuRenderer {
             user_pipelines: HashMap::new(),
 
             shaders: Arc::new(Mutex::new(shaders)),
-            render_targets: Arc::new(Mutex::new(HashMap::new())),
 
             vertex_buffer,
             index_buffer,
@@ -259,33 +257,37 @@ impl WgpuRenderer {
             context,
 
             blit_pipeline: None,
-        })));
+        }));
+
+        let _ = WGPU_RENDERER.set(wr.clone());
 
         create_default_rt();
+
+        wr.write().resize(size, true);
     }
 
-    pub(crate) fn resize(&mut self, mut new_size: PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            new_size.width = new_size.width.max(1);
-            new_size.height = new_size.height.max(1);
-            self.size = new_size;
+    pub(crate) fn resize(&mut self, size: UVec2, is_first: bool) {
+        if !is_first && self.size == size { return; }
 
-            if let Some(main_camera) = &get_run_time_context().read().main_camera {
-                main_camera.write().resize(new_size);
-            }
+        self.size = size;
 
-            if let Some(surface) = &self.context.surface.as_mut() {
-                let mut config = self.context.config.write();
+        // 相机固定尺寸不参与缩放
+        // if let Some(main_camera) = &get_run_time_context().read().main_camera {
+        //     main_camera.lock().resize(size);
+        // }
 
-                config.width = new_size.width;
-                config.height = new_size.height;
-                // config.present_mode = present_mode;
+        if let Some(surface) = &self.context.surface.as_mut() {
+            let mut config = self.context.config.write();
 
-                surface.configure(&self.context.device, &config);
-            }
+            config.width = size.x;
+            config.height = size.y;
+            // config.present_mode = present_mode;
 
-            self.update_resources();
+            surface.configure(&self.context.device, &config);
         }
+
+        self.update_resources();
+        
     }
 
     // 创建渲染管线
@@ -315,7 +317,7 @@ impl WgpuRenderer {
                 vertex: VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[], // 无顶点缓冲区，使用内置vertex_index
+                    buffers: &[SpriteVertex::desc()],
                     compilation_options: PipelineCompilationOptions::default(),
                 },
                 fragment: Some(FragmentState {
@@ -357,20 +359,20 @@ impl WgpuRenderer {
         // 更新零号rt
         let size = get_window_size();
 
-        let binding = self.render_targets.lock();
-        let default_rt = binding.get(&RenderTargetId(0)).unwrap();
+        let rts = get_global_render_targets().read();
+        let default_rt = rts.get(&RenderTargetId(0)).unwrap();
 
-        default_rt.lock().update(
+        default_rt.write().update(
             &self.context,
             &self.texture_layout,
             &RenderTargetParams {
                 label: "Default RT".to_owned(),
                 size: uvec2(size.width.max(1), size.height.max(1)),
             },
-        )
+        );
     }
 
-    pub(crate) fn update(&mut self) {
+    pub(crate) fn update_camera_buffer(&mut self) {
         // region: 相机参数设置
         let new_matrix = self.projection_matrix();
 
@@ -387,8 +389,8 @@ impl WgpuRenderer {
 
     pub(crate) fn clear(&mut self, clear_color: Color) {
         let cur_rt_id = get_current_render_target();
-        let binding = self.render_targets.lock();
-        let cur_rt = binding.get(&cur_rt_id).unwrap().lock();
+        let rts = get_global_render_targets().read();
+        let cur_rt = rts.get(&cur_rt_id).unwrap().read();
 
         let w_clear_color: wgpu::Color = clear_color.into();
 
@@ -454,13 +456,36 @@ impl WgpuRenderer {
             self.error_shader_id,
         );
 
-        let rts = self.render_targets.lock();
+        let rts = get_global_render_targets().read();
 
         // 2. 将默认 RT绘制到Surface上
         let default_rt = rts
             .get(&RenderTargetId(0))
             .unwrap_or_else(|| panic!("No Default RendererTarget"))
-            .lock();
+            .read();
+
+        const QUAD_INDICES_U32: &[u32] = &[0, 1, 2, 0, 2, 3];
+
+        let (half_w, half_h) = (self.size.x as f32 / 2.0, self.size.y as f32 / 2.0);
+
+        let all_vertices: [SpriteVertex; 4] = [
+            SpriteVertex::new(vec3(-half_w, -half_h, 0.0), vec2(0.0, 1.0), WHITE),
+            SpriteVertex::new(vec3(-half_w,  half_h, 0.0), vec2(0.0, 0.0), WHITE),
+            SpriteVertex::new(vec3( half_w,  half_h, 0.0), vec2(1.0, 0.0), WHITE),
+            SpriteVertex::new(vec3( half_w, -half_h, 0.0), vec2(1.0, 1.0), WHITE),
+        ];
+
+        // 3. 上传顶点 / 索引
+        self.vertex_buffer.ensure_size_and_copy(
+            &self.context.device,
+            &self.context.queue,
+            bytemuck::cast_slice(&all_vertices),
+        );
+        self.index_buffer.ensure_size_and_copy(
+            &self.context.device,
+            &self.context.queue,
+            bytemuck::cast_slice(QUAD_INDICES_U32),
+        );
 
         let mut encoder = self
             .context
@@ -483,17 +508,19 @@ impl WgpuRenderer {
                 depth_stencil_attachment: None,
                 ..Default::default()
             });
-            
             rp.set_pipeline(self.blit_pipeline.as_ref().unwrap());
+
+            rp.set_vertex_buffer(0, self.vertex_buffer.buffer.slice(..));
+            rp.set_index_buffer(self.index_buffer.buffer.slice(..), IndexFormat::Uint32);
+
             rp.set_bind_group(0, &default_rt.blit_bind_group, &[]); // 纹理+采样器
             rp.set_bind_group(1, self.camera_bind_group.as_ref(), &[]); // 相机uniform
-            rp.draw(0..3, 0..1); // 绘制三角形 (顶点着色器生成全屏四边形)
+            
+            // 8. 绘制
+            rp.draw_indexed(0..6, 0, 0..1);
         }
 
-        self
-            .context
-            .queue
-            .submit(std::iter::once(encoder.finish()));
+        self.context.queue.submit(std::iter::once(encoder.finish()));
 
         output.present();
     }
@@ -512,21 +539,31 @@ impl WgpuRenderer {
 
         encoder.clear_buffer(&self.vertex_buffer.buffer, 0, None);
         encoder.clear_buffer(&self.index_buffer.buffer, 0, None);
+        encoder.clear_buffer(&self.camera_buffer, 0, None);
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
     }
 
     fn projection_matrix(&self) -> Mat4 {
         if let Some(camera) = &get_run_time_context().read().main_camera {
-            camera.read().matrix()
+            camera.lock().matrix()
         } else {
             self.pixel_perfect_projection_matrix()
         }
     }
 
     fn pixel_perfect_projection_matrix(&self) -> Mat4 {
-        let (width, height) = (self.size.width as f32, self.size.height as f32);
-
-        Mat4::orthographic_rh(0., width, height, 0., -1., 1.)
+        let (x, y) = (self.size.x as f32 / 2.0, self.size.y as f32 / 2.0);
+        // 保持左手坐标系函数
+        let view = Mat4::look_at_lh(Vec3::ZERO, Vec3::Z, Vec3::Y);
+        let proj = Mat4::orthographic_lh(
+            -x,
+            x,
+            -y,
+            y,
+            -1.,
+            1.,
+        );
+        proj * view
     }
 }

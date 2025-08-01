@@ -93,7 +93,7 @@ pub struct RunTimeContext {
     pub sample_count: Msaa,
 
     pub clear_color: Color,
-    pub main_camera: Option<Arc<RwLock<dyn camera::Camera>>>,
+    pub main_camera: Option<Arc<Mutex<dyn camera::Camera>>>,
 }
 
 impl Default for RunTimeContext {
@@ -120,14 +120,15 @@ pub fn set_clear_background_color(color: Color) {
     get_run_time_context().write().clear_color = color;
 }
 
-pub fn set_camera<T: Camera + Send + Sync + 'static>(mut camera: T) -> Arc<RwLock<T>> {
-    camera.resize(get_window_size());
-    let arc_cam = Arc::new(RwLock::new(camera));
-    get_run_time_context().write().main_camera = Some(arc_cam.clone());
-    arc_cam
+pub fn set_camera<T: Camera + Send + Sync + 'static>(mut camera: T) {
+    let size = get_window_size();
+    let size = uvec2(size.width.max(1), size.height.max(1));
+    
+    camera.resize(size);
+    get_run_time_context().write().main_camera = Some(Arc::new(Mutex::new(camera)));
 }
 
-pub fn get_camera() -> Option<Arc<RwLock<dyn Camera>>> {
+pub fn get_camera() -> Option<Arc<Mutex<dyn Camera>>> {
     if let Some(cam) = &get_run_time_context().read().main_camera {
         Some(Arc::clone(&cam))
     } else {

@@ -109,41 +109,37 @@ pub fn get_current_render_target() -> RenderTargetId {
 ///
 /// `ShaderMap` can be obtained from `EngineContext` as `c.renderer.shaders.borrow_mut()`
 pub fn create_shader(name: &str, source: &str) -> Result<ShaderId> {
-    if let Some(wr) = get_global_wgpu() {
-        let wr = wr.lock();
-        let mut shaders = wr.shaders.lock();
+    let wr = get_global_wgpu().read();
+    let mut shaders = wr.shaders.lock();
 
-        let id = gen_shader_id();
+    let id = gen_shader_id();
 
-        if source.contains("@vertex") {
-            panic!("You only need to provide the fragment shader");
-        }
-
-        if shaders.exists(id) {
-            bail!("Shader with name '{}' already exists", name);
-        }
-
-        let (uniform_defs, clean_uniform_source) = parse_and_remove_uniforms(source);
-
-        let all_source = sprite_shader_from_fragment(&clean_uniform_source);
-
-        let bindings = uniform_defs_to_bindings(&uniform_defs);
-
-        shaders.insert_shader(
-            id,
-            Shader {
-                id,
-                name: format!("{} Shader", name),
-                source: build_shader_source(&all_source, &bindings, &uniform_defs),
-                uniform_defs,
-                bindings,
-            },
-        );
-
-        Ok(id)
-    } else {
-        panic!("Wgpu Renderer Not Init")
+    if source.contains("@vertex") {
+        panic!("You only need to provide the fragment shader");
     }
+
+    if shaders.exists(id) {
+        bail!("Shader with name '{}' already exists", name);
+    }
+
+    let (uniform_defs, clean_uniform_source) = parse_and_remove_uniforms(source);
+
+    let all_source = sprite_shader_from_fragment(&clean_uniform_source);
+
+    let bindings = uniform_defs_to_bindings(&uniform_defs);
+
+    shaders.insert_shader(
+        id,
+        Shader {
+            id,
+            name: format!("{} Shader", name),
+            source: build_shader_source(&all_source, &bindings, &uniform_defs),
+            uniform_defs,
+            bindings,
+        },
+    );
+
+    Ok(id)
 }
 
 pub fn create_shader1(shaders: &mut ShaderMap, name: &str, source: &str) -> Result<ShaderId> {
@@ -196,7 +192,8 @@ fn parse_and_remove_uniforms(input: &str) -> (UniformDefs, String) {
     .unwrap();
 
     // 提取所有匹配项
-    let uniforms = re.captures_iter(&c_input)
+    let uniforms = re
+        .captures_iter(&c_input)
         .map(|cap| {
             (
                 cap[1].to_string(), // 变量名

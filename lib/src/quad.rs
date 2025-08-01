@@ -140,6 +140,7 @@ pub fn draw_line_tex(
         z_index,
         texture,
         y_sort_offset: 0.0,
+        ..Default::default()
     })
 }
 
@@ -168,19 +169,14 @@ pub fn draw_sprite_ex(texture: TextureHandle, params: DrawTextureParams) {
                 }
             },
             TextureHandle::RenderTarget(render_target_id) => {
-                if let Some(wr) = get_global_wgpu() {
-                    let wr = wr.lock();
-                    let rts = wr.render_targets.lock();
+                let rts = get_global_render_targets().read();
 
-                    if let Some(rt) = rts.get(&render_target_id) {
-                        rt.lock().size
-                    } else {
-                        return;
-                    }
+                if let Some(rt) = rts.get(&render_target_id) {
+                    rt.read().size
                 } else {
-                    panic!("wgpu renderer not init");
+                    return;
                 }
-            },
+            }
         })
     }
 
@@ -389,11 +385,7 @@ pub fn rotated_rectangle(
 
 pub fn tex_coord_flip(mut xy: Vec2, params: &RawDrawParams) -> Vec2 {
     fn flip(v: f32) -> f32 {
-        if v == 0.0 {
-            1.0
-        } else {
-            0.0
-        }
+        if v == 0.0 { 1.0 } else { 0.0 }
     }
 
     if params.flip_x {

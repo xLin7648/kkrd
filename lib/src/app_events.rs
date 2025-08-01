@@ -3,13 +3,6 @@ use parking_lot::lock_api::Mutex;
 use pollster::FutureExt;
 use winit::platform::windows::{BackdropType, WindowAttributesExtWindows};
 
-#[derive(Default)]
-struct App {
-    pub runtime: Option<Box<Runtime>>,
-    pub window: Option<Arc<Window>>,
-    pub init_game_config: InitGameConfig,
-}
-
 pub fn init_game(
     init_game_config: InitGameConfig,
     run_time_context: RunTimeContext,
@@ -102,22 +95,56 @@ pub fn init_game(
 
         // 主游戏循环
         loop {
-            // 执行游戏逻辑（物理、AI、状态更新等）
-            game.update().await;
-
             // 创建帧完成通知通道
-            let (frame_done_tx, frame_done_rx) = oneshot::channel::<()>();
+            let (check_frame_tx, check_frame_rx) = oneshot::channel::<FrameState>();
 
             // 发送渲染请求并附带完成通知
-            if let Err(e) = event_loop_proxy.send_event(WinitMessage::RenderFrame(frame_done_tx)) {
+            if let Err(e) =
+                event_loop_proxy.send_event(WinitMessage::CheckFrameState(check_frame_tx))
+            {
                 error!("Failed to send render request: {}", e);
                 let _ = event_loop_proxy.send_event(WinitMessage::Exit);
                 break;
             }
 
-            // 等待渲染完成通知
-            if frame_done_rx.await.is_err() {
-                warn!("Frame completion notification failed");
+            if let Ok(frame_state) = check_frame_rx.await {
+                get_global_wgpu().write().resize(frame_state.resize, false);
+
+                // 执行游戏逻辑（物理、AI、状态更新等）
+                game.update().await;
+
+                // 创建帧完成通知通道
+                let (frame_done_tx, frame_done_rx) = oneshot::channel::<()>();
+
+                // 发送渲染请求并附带完成通知
+                if let Err(e) =
+                    event_loop_proxy.send_event(WinitMessage::RenderFrame(frame_done_tx))
+                {
+                    error!("Failed to send render request: {}", e);
+                    let _ = event_loop_proxy.send_event(WinitMessage::Exit);
+                    break;
+                }
+
+                // 等待渲染完成通知
+                if frame_done_rx.await.is_err() {
+                    warn!("Frame completion notification failed");
+                }
+            }
+
+            // 创建帧完成通知通道
+            let (reset_frame_tx, reset_frame_rx) = oneshot::channel::<()>();
+
+            // 发送渲染请求并附带完成通知
+            if let Err(e) =
+                event_loop_proxy.send_event(WinitMessage::ResetFrameState(reset_frame_tx))
+            {
+                error!("Failed to send render request: {}", e);
+                let _ = event_loop_proxy.send_event(WinitMessage::Exit);
+                break;
+            }
+
+            if reset_frame_rx.await.is_err() {
+                warn!("Reset frame state failed");
             }
 
             // 更新timer
@@ -126,7 +153,7 @@ pub fn init_game(
             #[cfg(any(target_os = "windows", target_os = "macos"))]
             framerate_limiter();
 
-            info!("-------------新的一帧-------------");
+            // info!("-------------新的一帧-------------");
 
             // event_loop_proxy.send_event(WinitMessage::Exit);
             // return;
@@ -141,6 +168,104 @@ pub fn init_game(
 
     // 启动事件循环
     let _ = event_loop.run_app(&mut app);
+}
+
+#[derive(Default)]
+struct App {
+    pub runtime: Option<Box<Runtime>>,
+    pub window: Option<Arc<Window>>,
+    pub init_game_config: InitGameConfig,
+
+    frame_state: FrameState,
+}
+
+impl ApplicationHandler<WinitMessage> for App {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WinitMessage) {
+        match event {
+            WinitMessage::CheckInit(sender) => {
+                if let Err(_) = sender.send(self.window.is_some() && check_wgpu_init()) {
+                    warn!("Failed to send check init");
+                }
+            }
+            WinitMessage::RenderFrame(sender) => {
+                self.renderer_update();
+
+                // 通知游戏循环渲染完成
+                if let Err(_) = sender.send(()) {
+                    warn!("Failed to send frame completion");
+                }
+            }
+            WinitMessage::CheckFrameState(sender) => {
+                // 发送帧状态
+                if let Err(_) = sender.send(self.frame_state) {
+                    warn!("Failed to send frame completion");
+                }
+            }
+            WinitMessage::ResetFrameState(sender) => {
+                // self.frame_state.resize = None;
+
+                // 重置帧状态
+                if let Err(_) = sender.send(()) {
+                    warn!("Failed to send frame completion");
+                }
+            }
+            WinitMessage::Exit => event_loop.exit(),
+        }
+    }
+
+    // 当应用程序从挂起状态恢复时调用此方法
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(window) = &self.window {
+            get_global_wgpu().write().context.resume(window.clone());
+            info!("Resumed");
+        } else {
+            // 从桌面回来不会执行
+            self.init_window(event_loop);
+            WgpuRenderer::new(self.window.clone().unwrap()).block_on();
+        }
+    }
+
+    // 处理窗口相关的事件
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        match event {
+            WindowEvent::Resized(new_size) => {
+                let width = new_size.width.max(1);
+                let height = new_size.height.max(1);
+
+                self.frame_state.resize = uvec2(width, height);
+            }
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
+            _ => (),
+        }
+    }
+
+    // region: 看起来没什么用的内容
+
+    // 当应用程序被挂起时调用
+    fn suspended(&mut self, _: &ActiveEventLoop) {
+        get_global_wgpu().write().context.surface = None;
+
+        info!("Suspended");
+    }
+
+    // 在应用程序准备退出时调用
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        // 关闭 Tokio 运行时
+        if let Some(runtime) = self.runtime.take() {
+            // 用 take() 获取所有权
+            runtime.shutdown_background();
+        }
+        info!("Exiting");
+    }
+
+    // endregion: 看起来没什么用的内容
 }
 
 impl App {
@@ -184,91 +309,11 @@ impl App {
     }
 
     pub fn renderer_update(&mut self) {
-        if let Some(wr) = get_global_wgpu() {
-            let mut wr = wr.lock();
-            wr.update();
-            wr.draw();
-            wr.end_frame();
+        let mut wr = get_global_wgpu().write();
+        wr.update_camera_buffer();
+        wr.draw();
+        wr.end_frame();
 
-            clear_shader_uniform_table();
-        }
+        clear_shader_uniform_table();
     }
-}
-
-impl ApplicationHandler<WinitMessage> for App {
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WinitMessage) {
-        match event {
-            WinitMessage::CheckInit(tx) => {
-                if let Err(_) = tx.send(self.window.is_some() && get_global_wgpu().is_some()) {
-                    warn!("Failed to send check init");
-                }
-            }
-            WinitMessage::RenderFrame(completion_tx) => {
-                self.renderer_update();
-
-                // 通知游戏循环渲染完成
-                if let Err(_) = completion_tx.send(()) {
-                    warn!("Failed to send frame completion");
-                }
-            }
-            WinitMessage::Exit => event_loop.exit(),
-        }
-    }
-
-    // 当应用程序从挂起状态恢复时调用此方法
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(window) = &self.window {
-            if let Some(wr) = get_global_wgpu() {
-                wr.lock().context.resume(window.clone());
-                info!("Resumed");
-            }
-        } else {
-            // 从桌面回来不会执行
-            self.init_window(event_loop);
-            WgpuRenderer::new(self.window.clone().unwrap()).block_on();
-        }
-    }
-
-    // 处理窗口相关的事件
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _: winit::window::WindowId,
-        event: winit::event::WindowEvent,
-    ) {
-        match event {
-            WindowEvent::Resized(new_size) => {
-                if let Some(wr) = get_global_wgpu() {
-                    wr.lock().resize(new_size);
-                }
-            }
-            WindowEvent::CloseRequested => {
-                event_loop.exit();
-            }
-            _ => (),
-        }
-    }
-
-    // region: 看起来没什么用的内容
-
-    // 当应用程序被挂起时调用
-    fn suspended(&mut self, _: &ActiveEventLoop) {
-        if let Some(wr) = get_global_wgpu() {
-            wr.lock().context.surface = None;
-        }
-
-        info!("Suspended");
-    }
-
-    // 在应用程序准备退出时调用
-    fn exiting(&mut self, _: &ActiveEventLoop) {
-        // 关闭 Tokio 运行时
-        if let Some(runtime) = self.runtime.take() {
-            // 用 take() 获取所有权
-            runtime.shutdown_background();
-        }
-        info!("Exiting");
-    }
-
-    // endregion: 看起来没什么用的内容
 }

@@ -6,9 +6,17 @@ var s_diffuse: sampler;
 @group(1) @binding(0)
 var<uniform> camera: CameraUniform;
 
-struct VertexOutput {
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) tex_coords: vec2<f32>,
+    @location(2) color: vec4<f32>,
+}
+
+struct FragmentInput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) world_position: vec3<f32>,
 }
 
 struct CameraUniform {
@@ -16,30 +24,20 @@ struct CameraUniform {
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    var out: VertexOutput;
+fn vs_main(
+    i: VertexInput,
+) -> FragmentInput {
+    var o: FragmentInput;
 
-    // 0 -> (0,0)  1 -> (2,0)  2 -> (0,2)   → 顺时针
-    let x = i32(vertex_index) & 1;
-    let y = i32(vertex_index) / 2;
+    o.clip_position = camera.view_proj * vec4<f32>(i.position, 1.0);
+    o.world_position = i.position;
+    o.tex_coords = i.tex_coords;
+    o.color = i.color;
 
-    let tc = vec2<f32>(
-        f32(x) * 2.0, 
-        f32(y) * 2.0
-    );
-
-    out.clip_position = vec4<f32>(
-        tc.x * 2.0 - 1.0,
-        1.0 - tc.y * 2.0,
-        0.0,
-        1.0
-    );
-    out.tex_coords = tc;
-    return out;
+    return o;
 }
 
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    //return vec4(1.0,0.0,0.0,1.0);
+fn fs_main(input: FragmentInput) -> @location(0) vec4<f32> {
     return textureSample(t_diffuse, s_diffuse, input.tex_coords);
 }

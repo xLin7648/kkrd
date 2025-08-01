@@ -38,23 +38,19 @@ impl UserRenderTarget {
     pub fn new(params: &RenderTargetParams) -> RenderTargetId {
         let id = gen_render_target();
 
-        if let Some(wr) = get_global_wgpu() {
-            let wr = wr.lock();
+        let wr = get_global_wgpu().read();
 
-            // 5. 插入全局表
-            wr.render_targets.lock().insert(
-                id,
-                Arc::new(Mutex::new(Self::create_resources(
-                    &wr.context,
-                    &wr.texture_layout,
-                    params,
-                ))),
-            );
+        // 5. 插入全局表
+        get_global_render_targets().write().insert(
+            id,
+            Arc::new(RwLock::new(Self::create_resources(
+                &wr.context,
+                &wr.texture_layout,
+                params,
+            ))),
+        );
 
-            id
-        } else {
-            panic!("Wgpu Renderer Not Init");
-        }
+        id
     }
 
     pub fn update(

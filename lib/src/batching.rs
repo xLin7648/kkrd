@@ -16,10 +16,10 @@ pub fn run_batched_render_passes(
 ) {
     let queues = consume_render_queues();
 
-    for (key, mut meshes) in queues.into_iter().sorted_by_key(|(k, _)| k.z_index) {
-        if get_y_sort(key.z_index) {
-            meshes.sort_by_key(|mesh| OrderedFloat::<f32>(-(mesh.origin.y + mesh.y_sort_offset)));
-        }
+    for (key, mut meshes) in queues.into_iter()/*.sorted_by_key(|(k, _)| k.z_index) */ {
+        // if get_y_sort(key.z_index) {
+        //     meshes.sort_by_key(|mesh| OrderedFloat::<f32>(-(mesh.origin.y + mesh.y_sort_offset)));
+        // }
 
         render_meshes(
             renderer,
@@ -70,8 +70,8 @@ pub fn render_meshes(
     );
 
     // 4. 选择渲染目标
-    let rts = renderer.render_targets.lock();
-    let rt = &rts.get(&pass_data.render_target).unwrap().lock();
+    let rts = get_global_render_targets().read();
+    let rt = &rts.get(&pass_data.render_target).unwrap().read();
 
     let (color_view, depth_view, resolve_target) = if sample_count != Msaa::Off {
         (&rt.msaa_view, &rt.msaa_depth_view, Some(&rt.resolve_view))
@@ -137,13 +137,12 @@ pub fn render_meshes(
         let tex_bind_group = match pass_data.texture {
             TextureHandle::RenderTarget(rt_id) => {
                 &if let Some(rt) = rts.get(&rt_id) {
-                    rt.lock()
+                    rt.read()
                 } else if let Some(rt) = rts.get(&RenderTargetId(0)) {
-                    rt.lock()
+                    rt.read()
                 } else {
                     panic!("No Default RendererTarget");
-                }
-                .blit_bind_group
+                }.blit_bind_group
             }
             TextureHandle::Path(id) | TextureHandle::Raw(id) => {
                 &textures
@@ -152,6 +151,7 @@ pub fn render_meshes(
                     .bind_group
             }
         };
+        
         rp.set_bind_group(0, tex_bind_group, &[]);
         rp.set_bind_group(1, renderer.camera_bind_group.as_ref(), &[]);
 

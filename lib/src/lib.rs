@@ -93,8 +93,16 @@ use tokio::{
 #[derive(Debug)]
 enum WinitMessage {
     CheckInit(oneshot::Sender<bool>),
-    RenderFrame(oneshot::Sender<()>), // 请求渲染帧
-    Exit,                             // 退出信号
+    RenderFrame(oneshot::Sender<()>),             // 请求渲染帧
+    CheckFrameState(oneshot::Sender<FrameState>), // 检查帧状态
+    ResetFrameState(oneshot::Sender<()>),         // 重置帧状态
+    Exit,                                         // 退出信号
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Default, Clone, Copy)]
+struct FrameState {
+    resize: UVec2
 }
 
 // 新增全局窗口引用
@@ -113,18 +121,27 @@ pub fn get_window_size() -> PhysicalSize<u32> {
     }
 }
 
-static WGPU_RENDERER: OnceLock<Arc<Mutex<WgpuRenderer>>> = OnceLock::new();
+static WGPU_RENDERER: OnceLock<Arc<RwLock<WgpuRenderer>>> = OnceLock::new();
 
-pub fn get_global_wgpu() -> Option<&'static Arc<Mutex<WgpuRenderer>>> {
-    WGPU_RENDERER.get()
+pub fn check_wgpu_init() -> bool {
+    WGPU_RENDERER.get().is_some()
+}
+
+pub fn get_global_wgpu() -> &'static Arc<RwLock<WgpuRenderer>> {
+    WGPU_RENDERER.get().unwrap_or_else(|| panic!("Wgpu Render Not Init"))
 }
 
 pub static DEFAULT_TEXTURE_FORMAT: OnceLock<TextureFormat> = OnceLock::new();
 
 pub fn clear_background(color: Color) {
-    if let Some(wr) = get_global_wgpu() {
-        wr.lock().clear(color);
-    }
+    let wr = get_global_wgpu();
+    wr.write().clear(color);
+}
+
+static RENDER_TARGETS: OnceLock<Arc<RwLock<RenderTargetMap>>> = OnceLock::new();
+
+pub fn get_global_render_targets() -> &'static Arc<RwLock<RenderTargetMap>> {
+    RENDER_TARGETS.get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
 }
 
 #[cfg(target_os = "android")]
